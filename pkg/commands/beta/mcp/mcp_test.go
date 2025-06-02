@@ -15,9 +15,9 @@ func TestMCPListCommand_Works(t *testing.T) {
 	var stdout bytes.Buffer
 
 	app.Init = func(_ []string, _ io.Reader) (*global.Data, error) {
-		return testutil.MockGlobalData([]string{"mcp", "list"}, &stdout), nil
+		return testutil.MockGlobalData([]string{"beta", "mcp", "list"}, &stdout), nil
 	}
-	_ = app.Run([]string{"mcp", "list"}, nil) // ignore error, just check output
+	_ = app.Run([]string{"beta", "mcp", "list"}, nil) // ignore error, just check output
 
 	helpOutput := stdout.String()
 	if want := "api"; !bytes.Contains([]byte(helpOutput), []byte(want)) {
@@ -40,7 +40,7 @@ func TestMCPAPICommand_Works(t *testing.T) {
 	}()
 
 	// Provide a dummy token and API endpoint via the mock global data
-	data := testutil.MockGlobalData([]string{"mcp", "api"}, io.Discard)
+	data := testutil.MockGlobalData([]string{"beta", "mcp", "api"}, io.Discard)
 	data.Config.Profiles["user"].Token = "dummy-token"
 	data.Config.Profiles["user"].Email = "dummy@example.com"
 	data.Config.Profiles["user"].Default = true
@@ -65,7 +65,7 @@ func TestMCPAPICommand_Works(t *testing.T) {
 		}{buf.String(), copyErr}
 	}()
 
-	_ = app.Run([]string{"mcp", "api"}, nil)
+	_ = app.Run([]string{"beta", "mcp", "api"}, nil)
 	w.Close() // close writer to signal end of output
 	result := <-done
 

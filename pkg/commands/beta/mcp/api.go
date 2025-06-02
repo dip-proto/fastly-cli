@@ -36,17 +36,17 @@ Options:
 
 Examples:
   # Run using stdio (default)
-  fastly mcp api
+  fastly beta mcp api
 
   # Run using HTTP
-  fastly mcp api --http :8080
+  fastly beta mcp api --http :8080
 
   # Example JSON configuration for IDEs (e.g., VS Code, JetBrains)
   {
     "Fastly API": {
       "command": "fastly",
       "args": [
-          "mcp", "api"
+          "beta", "mcp", "api"
       ]
     }
   }

@@ -9,6 +9,8 @@ import (
 	"github.com/fastly/cli/pkg/commands/alerts"
 	"github.com/fastly/cli/pkg/commands/authtoken"
 	"github.com/fastly/cli/pkg/commands/backend"
+	"github.com/fastly/cli/pkg/commands/beta"
+	"github.com/fastly/cli/pkg/commands/beta/mcp"
 	"github.com/fastly/cli/pkg/commands/compute"
 	"github.com/fastly/cli/pkg/commands/compute/computeacl"
 	"github.com/fastly/cli/pkg/commands/config"
@@ -54,7 +56,6 @@ import (
 	"github.com/fastly/cli/pkg/commands/logging/sumologic"
 	"github.com/fastly/cli/pkg/commands/logging/syslog"
 	"github.com/fastly/cli/pkg/commands/logtail"
-	"github.com/fastly/cli/pkg/commands/mcp"
 	"github.com/fastly/cli/pkg/commands/objectstorage"
 	"github.com/fastly/cli/pkg/commands/objectstorage/accesskeys"
 	"github.com/fastly/cli/pkg/commands/pop"
@@ -135,6 +136,10 @@ func Define( // nolint:revive // function-length
 	backendDescribe := backend.NewDescribeCommand(backendCmdRoot.CmdClause, data)
 	backendList := backend.NewListCommand(backendCmdRoot.CmdClause, data)
 	backendUpdate := backend.NewUpdateCommand(backendCmdRoot.CmdClause, data)
+	betaCmdRoot := beta.NewRootCommand(app, data)
+	mcpCmdRoot := mcp.NewRootCommand(betaCmdRoot.CmdClause, data)
+	mcpAPI := mcp.NewAPICommand(mcpCmdRoot.CmdClause, data)
+	mcpList := mcp.NewListCommand(mcpCmdRoot.CmdClause, data)
 	computeCmdRoot := compute.NewRootCommand(app, data)
 	computeACLCmdRoot := computeacl.NewRootCommand(computeCmdRoot.CmdClause, data)
 	computeACLCreate := computeacl.NewCreateCommand(computeACLCmdRoot.CmdClause, data)
@@ -224,9 +229,6 @@ func Define( // nolint:revive // function-length
 	kvstoreentryDescribe := kvstoreentry.NewDescribeCommand(kvstoreentryCmdRoot.CmdClause, data)
 	kvstoreentryList := kvstoreentry.NewListCommand(kvstoreentryCmdRoot.CmdClause, data)
 	logtailCmdRoot := logtail.NewRootCommand(app, data)
-	mcpCmdRoot := mcp.NewRootCommand(app, data)
-	mcpAPI := mcp.NewAPICommand(mcpCmdRoot.CmdClause, data)
-	mcpList := mcp.NewListCommand(mcpCmdRoot.CmdClause, data)
 	loggingCmdRoot := logging.NewRootCommand(app, data)
 	loggingAzureblobCmdRoot := azureblob.NewRootCommand(loggingCmdRoot.CmdClause, data)
 	loggingAzureblobCreate := azureblob.NewCreateCommand(loggingAzureblobCmdRoot.CmdClause, data)
@@ -637,6 +639,7 @@ func Define( // nolint:revive // function-length
 		kvstoreentryDescribe,
 		kvstoreentryList,
 		logtailCmdRoot,
+		betaCmdRoot,
 		mcpCmdRoot,
 		mcpAPI,
 		mcpList,

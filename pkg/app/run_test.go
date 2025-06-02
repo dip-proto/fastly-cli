@@ -65,6 +65,7 @@ acl-entry
 alerts
 auth-token
 backend
+beta
 compute
 config
 config-store
@@ -80,7 +81,6 @@ ip-list
 kv-store
 kv-store-entry
 log-tail
-mcp
 logging
 object-storage
 pops

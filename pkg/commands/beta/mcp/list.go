@@ -60,10 +60,10 @@ func (c *ListCommand) Exec(_ io.Reader, out io.Writer) error {
 
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
-	fmt.Fprintln(out, "  fastly mcp <server-type>")
+	fmt.Fprintln(out, "  fastly beta mcp <server-type>")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Example:")
-	fmt.Fprintln(out, "  fastly mcp api")
+	fmt.Fprintln(out, "  fastly beta mcp api")
 
 	return nil
 }
