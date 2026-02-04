@@ -52,7 +52,16 @@ const (
 
 	// WorkspaceID is the env we look for in Workspace related commands if none is provided.
 	WorkspaceID = "FASTLY_WORKSPACE_ID"
+
+	// DisableAuthCommand hides the `fastly auth` command tree when set.
+	DisableAuthCommand = "FASTLY_DISABLE_AUTH_COMMAND"
 )
+
+// AuthCommandDisabled reports whether FASTLY_DISABLE_AUTH_COMMAND is set to a
+// non-empty value.
+func AuthCommandDisabled() bool {
+	return os.Getenv(DisableAuthCommand) != ""
+}
 
 // Parse transforms the local environment data structure into a map type.
 func Parse(environ []string) map[string]string {
