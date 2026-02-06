@@ -525,7 +525,7 @@ Baz   789  vcl   1               n/a
 
 var listServicesVerboseOutput = strings.TrimSpace(`
 Fastly API endpoint: https://api.fastly.com
-Fastly API token provided via config file (profile: user)
+Fastly API token provided via config file (auth: user)
 
 Service 1/3
 	ID: 123
@@ -663,7 +663,7 @@ Versions: 2
 
 var describeServiceVerboseOutput = strings.TrimSpace(`
 Fastly API endpoint: https://api.fastly.com
-Fastly API token provided via config file (profile: user)
+Fastly API token provided via config file (auth: user)
 
 Service ID (via --service-id): 123
 
@@ -754,7 +754,7 @@ Versions: 2
 
 var searchServiceVerboseOutput = strings.TrimSpace(`
 Fastly API endpoint: https://api.fastly.com
-Fastly API token provided via config file (profile: user)
+Fastly API token provided via config file (auth: user)
 
 ID: 123
 Name: Foo
