@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"io"
+
 	"github.com/fastly/kingpin"
 
 	"github.com/fastly/cli/pkg/argparser"
@@ -49,6 +51,7 @@ import (
 	aliasvclcondition "github.com/fastly/cli/pkg/commands/alias/vcl/condition"
 	aliasvclcustom "github.com/fastly/cli/pkg/commands/alias/vcl/custom"
 	aliasvclsnippet "github.com/fastly/cli/pkg/commands/alias/vcl/snippet"
+	authcmd "github.com/fastly/cli/pkg/commands/auth"
 	"github.com/fastly/cli/pkg/commands/authtoken"
 	"github.com/fastly/cli/pkg/commands/compute"
 	"github.com/fastly/cli/pkg/commands/compute/computeacl"
@@ -162,6 +165,7 @@ import (
 	"github.com/fastly/cli/pkg/commands/user"
 	"github.com/fastly/cli/pkg/commands/version"
 	"github.com/fastly/cli/pkg/commands/whoami"
+	"github.com/fastly/cli/pkg/env"
 	"github.com/fastly/cli/pkg/global"
 )
 
@@ -179,6 +183,27 @@ func Define( // nolint:revive // function-length
 	// placement of the `sso` subcommand not look too odd we place it at the
 	// beginning of the list of commands.
 	ssoCmdRoot := sso.NewRootCommand(app, data)
+
+	disableAuthCmd := env.AuthCommandDisabled()
+	var authCommands []argparser.Command
+	if !disableAuthCmd {
+		authCmdRoot := authcmd.NewRootCommand(app, data)
+		authLogin := authcmd.NewLoginCommand(authCmdRoot.CmdClause, data)
+		authAdd := authcmd.NewAddCommand(authCmdRoot.CmdClause, data)
+		authDelete := authcmd.NewDeleteCommand(authCmdRoot.CmdClause, data)
+		authList := authcmd.NewListCommand(authCmdRoot.CmdClause, data)
+		authShow := authcmd.NewShowCommand(authCmdRoot.CmdClause, data)
+		authUse := authcmd.NewUseCommand(authCmdRoot.CmdClause, data)
+		authPolicyCmd := authCmdRoot.CmdClause.Command("policy", "Manage stored-token policies (CLI allow-lists)")
+		authPolicySet := authcmd.NewPolicySetCommand(authPolicyCmd, data)
+		authPolicyList := authcmd.NewPolicyListCommand(authPolicyCmd, data)
+		authPolicyShow := authcmd.NewPolicyShowCommand(authPolicyCmd, data)
+		authCommands = []argparser.Command{
+			authCmdRoot, authLogin, authAdd, authDelete,
+			authList, authShow, authUse,
+			authPolicySet, authPolicyList, authPolicyShow,
+		}
+	}
 
 	authtokenCmdRoot := authtoken.NewRootCommand(app, data)
 	authtokenCreate := authtoken.NewCreateCommand(authtokenCmdRoot.CmdClause, data)
@@ -1016,8 +1041,17 @@ func Define( // nolint:revive // function-length
 	aliasSyslogList := aliassyslog.NewListCommand(aliasSyslogRoot.CmdClause, data)
 	aliasSyslogUpdate := aliassyslog.NewUpdateCommand(aliasSyslogRoot.CmdClause, data)
 
-	return []argparser.Command{
+	if data.SSORunner == nil {
+		data.SSORunner = func(in io.Reader, out io.Writer, forceReAuth bool, skipPrompt bool) error {
+			return authcmd.RunSSO(in, out, data, forceReAuth, skipPrompt)
+		}
+	}
+
+	cmds := []argparser.Command{
 		shellcompleteCmdRoot,
+	}
+	cmds = append(cmds, authCommands...)
+	cmds = append(cmds, []argparser.Command{
 		authtokenCmdRoot,
 		authtokenCreate,
 		authtokenDelete,
@@ -1830,5 +1864,6 @@ func Define( // nolint:revive // function-length
 		aliasSyslogDescribe,
 		aliasSyslogList,
 		aliasSyslogUpdate,
-	}
+	}...)
+	return cmds
 }

@@ -84,6 +84,9 @@ type Data struct {
 	// interactive prompt can be skipped. This is for scenarios where the command
 	// is executed directly by the user.
 	SkipAuthPrompt bool
+	// SSORunner runs the SSO authentication flow. It is set by commands.Define()
+	// so that app/run.go can invoke SSO without a registered command.
+	SSORunner func(in io.Reader, out io.Writer, forceReAuth bool, skipPrompt bool) error
 	// Versioners contains multiple software versioning checkers.
 	// e.g. Check for latest CLI or Viceroy version.
 	Versioners Versioners
