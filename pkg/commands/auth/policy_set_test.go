@@ -62,8 +62,8 @@ func TestAuthPolicySet(t *testing.T) {
 			},
 		},
 		{
-			Name:       "clear is idempotent",
-			Args:       "policy set --clear",
+			Name: "clear is idempotent",
+			Args: "policy set --clear",
 			ConfigFile: &config.File{
 				Auth: config.Auth{
 					Default: "user",
@@ -95,10 +95,10 @@ func TestAuthPolicySet(t *testing.T) {
 			WantOutput: "Policy for \"user\" updated",
 		},
 		{
-			Name:      "token not found",
-			Args:      "policy set --name nonexistent --policy readonly",
+			Name:       "token not found",
+			Args:       "policy set --name nonexistent --policy readonly",
 			ConfigFile: baseConfig(),
-			WantError: "token \"nonexistent\" not found",
+			WantError:  "token \"nonexistent\" not found",
 		},
 	}
 

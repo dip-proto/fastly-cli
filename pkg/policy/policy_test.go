@@ -135,10 +135,8 @@ func TestValidatePolicy(t *testing.T) {
 				if !strings.Contains(err.Error(), tc.errSubstr) {
 					t.Fatalf("expected error containing %q, got: %s", tc.errSubstr, err)
 				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %s", err)
-				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %s", err)
 			}
 		})
 	}

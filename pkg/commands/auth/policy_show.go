@@ -46,6 +46,7 @@ func (c *PolicyShowCommand) Exec(_ io.Reader, out io.Writer) error {
 				return fmt.Errorf("current token is not stored (provided via --token or %s); policies only apply to stored tokens\n\nUse `fastly auth policy show --name <token>` to inspect a specific token", env.APIToken)
 			case lookup.SourceUndefined:
 				return fmt.Errorf("no token configured; run `fastly auth login` or pass a token name with --name")
+			case lookup.SourceFile, lookup.SourceDefault, lookup.SourceAuth:
 			}
 			name = c.Globals.AuthTokenName()
 		}

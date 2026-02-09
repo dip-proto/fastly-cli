@@ -38,7 +38,7 @@ func (c *ShowCommand) Exec(_ io.Reader, out io.Writer) error {
 			return fmt.Errorf("no token configured; run `fastly auth login` or pass a token name")
 		case lookup.SourceFlag, lookup.SourceEnvironment:
 			return fmt.Errorf("current token is not stored (provided via --token or %s); use `fastly auth add` or `fastly auth show <name>`", env.APIToken)
-		default:
+		case lookup.SourceFile, lookup.SourceDefault, lookup.SourceAuth:
 			c.name = c.Globals.AuthTokenName()
 			if c.name == "" {
 				c.name = c.Globals.Config.Auth.Default
