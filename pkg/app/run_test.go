@@ -54,14 +54,11 @@ _fastly_bash_autocomplete() {
 complete -F _fastly_bash_autocomplete fastly
 `,
 		},
-		// FIXME: Put back `sso` GA.
 		{
 			Name: "shell evaluate completion options",
 			Args: "--completion-bash",
 			WantOutput: `help
-sso
 auth
-auth-token
 compute
 config
 config-store
@@ -77,7 +74,6 @@ ngwaf
 object-storage
 pops
 products
-profile
 secret-store
 secret-store-entry
 service

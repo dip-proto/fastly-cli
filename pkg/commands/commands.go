@@ -52,7 +52,6 @@ import (
 	aliasvclcustom "github.com/fastly/cli/pkg/commands/alias/vcl/custom"
 	aliasvclsnippet "github.com/fastly/cli/pkg/commands/alias/vcl/snippet"
 	authcmd "github.com/fastly/cli/pkg/commands/auth"
-	"github.com/fastly/cli/pkg/commands/authtoken"
 	"github.com/fastly/cli/pkg/commands/compute"
 	"github.com/fastly/cli/pkg/commands/compute/computeacl"
 	"github.com/fastly/cli/pkg/commands/config"
@@ -98,7 +97,6 @@ import (
 	"github.com/fastly/cli/pkg/commands/objectstorage/accesskeys"
 	"github.com/fastly/cli/pkg/commands/pop"
 	"github.com/fastly/cli/pkg/commands/products"
-	"github.com/fastly/cli/pkg/commands/profile"
 	"github.com/fastly/cli/pkg/commands/secretstore"
 	"github.com/fastly/cli/pkg/commands/secretstoreentry"
 	"github.com/fastly/cli/pkg/commands/service"
@@ -149,7 +147,6 @@ import (
 	servicevclsnippet "github.com/fastly/cli/pkg/commands/service/vcl/snippet"
 	serviceversion "github.com/fastly/cli/pkg/commands/service/version"
 	"github.com/fastly/cli/pkg/commands/shellcomplete"
-	"github.com/fastly/cli/pkg/commands/sso"
 	"github.com/fastly/cli/pkg/commands/stats"
 	tlsconfig "github.com/fastly/cli/pkg/commands/tls/config"
 	tlscustom "github.com/fastly/cli/pkg/commands/tls/custom"
@@ -179,11 +176,6 @@ func Define( // nolint:revive // function-length
 	// NOTE: The order commands are created are the order they appear in 'help'.
 	// But because we need to pass the SSO command into the profile commands, it
 	// means the SSO command must be created _before_ the profile commands. This
-	// messes up the order of the commands in the `--help` output. So to make the
-	// placement of the `sso` subcommand not look too odd we place it at the
-	// beginning of the list of commands.
-	ssoCmdRoot := sso.NewRootCommand(app, data)
-
 	disableAuthCmd := env.AuthCommandDisabled()
 	var authCommands []argparser.Command
 	if !disableAuthCmd {
@@ -205,11 +197,6 @@ func Define( // nolint:revive // function-length
 		}
 	}
 
-	authtokenCmdRoot := authtoken.NewRootCommand(app, data)
-	authtokenCreate := authtoken.NewCreateCommand(authtokenCmdRoot.CmdClause, data)
-	authtokenDelete := authtoken.NewDeleteCommand(authtokenCmdRoot.CmdClause, data)
-	authtokenDescribe := authtoken.NewDescribeCommand(authtokenCmdRoot.CmdClause, data)
-	authtokenList := authtoken.NewListCommand(authtokenCmdRoot.CmdClause, data)
 	computeCmdRoot := compute.NewRootCommand(app, data)
 	computeACLCmdRoot := computeacl.NewRootCommand(computeCmdRoot.CmdClause, data)
 	computeACLCreate := computeacl.NewCreateCommand(computeACLCmdRoot.CmdClause, data)
@@ -440,13 +427,6 @@ func Define( // nolint:revive // function-length
 	objectStorageAccesskeysList := accesskeys.NewListCommand(objectStorageAccesskeysRoot.CmdClause, data)
 	popCmdRoot := pop.NewRootCommand(app, data)
 	productsCmdRoot := products.NewRootCommand(app, data)
-	profileCmdRoot := profile.NewRootCommand(app, data)
-	profileCreate := profile.NewCreateCommand(profileCmdRoot.CmdClause, data, ssoCmdRoot)
-	profileDelete := profile.NewDeleteCommand(profileCmdRoot.CmdClause, data)
-	profileList := profile.NewListCommand(profileCmdRoot.CmdClause, data)
-	profileSwitch := profile.NewSwitchCommand(profileCmdRoot.CmdClause, data, ssoCmdRoot)
-	profileToken := profile.NewTokenCommand(profileCmdRoot.CmdClause, data)
-	profileUpdate := profile.NewUpdateCommand(profileCmdRoot.CmdClause, data, ssoCmdRoot)
 	secretstoreCmdRoot := secretstore.NewRootCommand(app, data)
 	secretstoreCreate := secretstore.NewCreateCommand(secretstoreCmdRoot.CmdClause, data)
 	secretstoreDescribe := secretstore.NewDescribeCommand(secretstoreCmdRoot.CmdClause, data)
@@ -1052,11 +1032,6 @@ func Define( // nolint:revive // function-length
 	}
 	cmds = append(cmds, authCommands...)
 	cmds = append(cmds, []argparser.Command{
-		authtokenCmdRoot,
-		authtokenCreate,
-		authtokenDelete,
-		authtokenDescribe,
-		authtokenList,
 		computeCmdRoot,
 		computeACLCmdRoot,
 		computeACLCreate,
@@ -1446,13 +1421,6 @@ func Define( // nolint:revive // function-length
 		objectStorageAccesskeysList,
 		popCmdRoot,
 		productsCmdRoot,
-		profileCmdRoot,
-		profileCreate,
-		profileDelete,
-		profileList,
-		profileSwitch,
-		profileToken,
-		profileUpdate,
 		secretstoreCreate,
 		secretstoreDescribe,
 		secretstoreDelete,
@@ -1568,7 +1536,6 @@ func Define( // nolint:revive // function-length
 		serviceVersionStage,
 		serviceVersionUnstage,
 		serviceVersionUpdate,
-		ssoCmdRoot,
 		statsCmdRoot,
 		statsHistorical,
 		statsRealtime,

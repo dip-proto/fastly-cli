@@ -1,7 +1,6 @@
 package global
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/fastly/cli/pkg/api"
@@ -80,48 +79,12 @@ type Data struct {
 	Output io.Writer
 	// RTSClient is a Fastly API client instance for the Real Time Stats endpoints.
 	RTSClient api.RealtimeStatsInterface
-	// SkipAuthPrompt is used to indicate to the `sso` command that the
-	// interactive prompt can be skipped. This is for scenarios where the command
-	// is executed directly by the user.
-	SkipAuthPrompt bool
 	// SSORunner runs the SSO authentication flow. It is set by commands.Define()
 	// so that app/run.go can invoke SSO without a registered command.
 	SSORunner func(in io.Reader, out io.Writer, forceReAuth bool, skipPrompt bool) error
 	// Versioners contains multiple software versioning checkers.
 	// e.g. Check for latest CLI or Viceroy version.
 	Versioners Versioners
-}
-
-// Profile identifies the current profile (if any).
-//
-// Deprecated: kept for compile compatibility until run.go is rewritten.
-func (d *Data) Profile() (string, *config.Profile, error) {
-	var (
-		profileData       *config.Profile
-		found             bool
-		name, profileName string
-	)
-	switch {
-	case d.Flags.Profile != "": // --profile
-		profileName = d.Flags.Profile
-	case d.Manifest.File.Profile != "": // `profile` field in fastly.toml
-		profileName = d.Manifest.File.Profile
-	default:
-		profileName = "default" // fallback to locating the default profile
-	}
-	for name, profileData = range d.Config.Profiles {
-		if (profileName == "default" && profileData.Default) || name == profileName {
-			if profileName == "default" {
-				profileName = name
-			}
-			found = true
-			break
-		}
-	}
-	if !found {
-		return "", nil, fmt.Errorf("failed to locate '%s' profile", profileName)
-	}
-	return profileName, profileData, nil
 }
 
 // Token yields the Fastly API token.
@@ -240,13 +203,9 @@ type Flags struct {
 	Debug bool
 	// NonInteractive auto-resolves all prompts.
 	NonInteractive bool
-	// Profile indicates the profile to use (consequently the 'token' used).
-	Profile string
 	// Quiet silences all output except direct command output.
 	Quiet bool
-	// SSO enables SSO authentication tokens for the current profile.
-	SSO bool
-	// Token is an override for a profile (when passed SSO is disabled).
+	// Token is a Fastly API token or the name of a stored auth token.
 	Token string
 	// Verbose prints additional output.
 	Verbose bool

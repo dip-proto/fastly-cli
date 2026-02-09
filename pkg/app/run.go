@@ -387,10 +387,7 @@ func configureKingpin(data *global.Data) *kingpin.Application {
 	app.Flag("auto-yes", "Answer yes automatically to all Yes/No confirmations. This may suppress security warnings").Short('y').BoolVar(&data.Flags.AutoYes)
 	// IMPORTANT: `--debug` is a built-in Kingpin flag so we must use `debug-mode`.
 	app.Flag("debug-mode", "Print API request and response details (NOTE: can disrupt the normal CLI flow output formatting)").BoolVar(&data.Flags.Debug)
-	// IMPORTANT: `--sso` causes a Kingpin runtime panic 🤦 so we use `enable-sso`.
-	app.Flag("enable-sso", "Enable Single-Sign On (SSO) for current profile execution (see also: 'fastly sso')").BoolVar(&data.Flags.SSO)
 	app.Flag("non-interactive", "Do not prompt for user input - suitable for CI processes. Equivalent to --accept-defaults and --auto-yes").Short('i').BoolVar(&data.Flags.NonInteractive)
-	app.Flag("profile", "Switch account profile for single command execution (see also: 'fastly profile switch')").Short('o').StringVar(&data.Flags.Profile)
 	app.Flag("quiet", "Silence all output except direct command output. This won't prevent interactive prompts (see: --accept-defaults, --auto-yes, --non-interactive)").Short('q').BoolVar(&data.Flags.Quiet)
 	if !env.AuthCommandDisabled() {
 		tokenHelp := fmt.Sprintf("Fastly API token, or name of a stored auth token (use 'default' for the default token). Falls back to %s env var", env.APIToken)
@@ -677,7 +674,7 @@ func commandCollectsData(command string) bool {
 // requires just the authentication server to be running.
 func commandRequiresAuthServer(command string) bool {
 	switch command {
-	case "auth login", "profile create", "profile switch", "profile update", "sso":
+	case "auth login":
 		return true
 	}
 	return false
@@ -698,7 +695,7 @@ func commandRequiresToken(command argparser.Command) bool {
 	}
 	commandName = strings.Split(commandName, " ")[0]
 	switch commandName {
-	case "auth", "config", "profile", "sso", "update", "version":
+	case "auth", "config", "update", "version":
 		return false
 	}
 	return true
