@@ -4,8 +4,13 @@
 
 ### Breaking:
 - breaking(domain) - service-version oriented `domain` commands have been moved under the `service domain` command. Versionless `domain-v1` commands have been moved to the `domain` command ([#1615](https://github.com/fastly/cli/pull/1615))
+- breaking(auth): removed `fastly profile` and `fastly auth-token` command trees. Use `fastly auth` subcommands instead.
+- breaking(auth): removed `--profile` global flag. Use `--token <name>` to select a stored auth token by name, or set `profile = "<name>"` in `fastly.toml`.
 
 ### Enhancements:
+- feat(auth): `auth login --sso` now stores the token as "sso" by default instead of deriving the name from the current default token. Use `--token NAME` to override. This prevents accidentally overwriting an unrelated static token.
+- feat(auth): add `FASTLY_DISABLE_AUTH_COMMAND` env var to hide the `fastly auth` command tree from help, completions, and invocation.
+- feat(auth): when `FASTLY_DISABLE_AUTH_COMMAND` is set, the `--token`/`-t` global flag is also disabled. Use `FASTLY_API_TOKEN` or stored config tokens instead.
 - feat(rust): Allow testing with prerelease Rust versions ([#1604](https://github.com/fastly/cli/pull/1604))
 - feat(compute/hashfiles): remove hashsum subcommand ([#1608](https://github.com/fastly/cli/pull/1608))
 - feat(ngwaf/rules): add support for CRUD operations for NGWAF rules ([#1605](https://github.com/fastly/cli/pull/1605))

@@ -129,29 +129,88 @@
       ]
     }
   },
-  "auth-token": {
-    "create": {
-      "apis": [
-        "https://www.fastly.com/documentation/reference/api/auth-tokens#create-token"
+  "auth": {
+    "login": {
+      "examples": [
+        {
+          "cmd": "fastly auth login",
+          "title": "Authenticate by pasting an API token"
+        },
+        {
+          "cmd": "fastly auth login --sso",
+          "title": "Authenticate using browser-based SSO"
+        }
       ]
     },
-    "delete": {
-      "apis": [
-        "https://www.fastly.com/documentation/reference/api/auth-tokens#revoke-token-current",
-        "https://www.fastly.com/documentation/reference/api/auth-tokens#bulk-revoke-tokens",
-        "https://www.fastly.com/documentation/reference/api/auth-tokens#revoke-token"
+    "add": {
+      "examples": [
+        {
+          "cmd": "fastly auth add staging --api-token $FASTLY_API_TOKEN",
+          "title": "Store a named token for a secondary environment"
+        }
       ]
     },
-    "describe": {
-      "apis": [
-        "https://www.fastly.com/documentation/reference/api/auth-tokens#get-token-current"
+    "use": {
+      "examples": [
+        {
+          "cmd": "fastly auth use staging",
+          "title": "Make a stored token the default"
+        }
       ]
     },
     "list": {
-      "apis": [
-        "https://www.fastly.com/documentation/reference/api/auth-tokens#list-tokens-customer",
-        "https://www.fastly.com/documentation/reference/api/auth-tokens#list-tokens-user"
+      "examples": [
+        {
+          "cmd": "fastly auth list",
+          "title": "List stored tokens"
+        }
       ]
+    },
+    "show": {
+      "examples": [
+        {
+          "cmd": "fastly auth show staging",
+          "title": "Show details for a stored token"
+        }
+      ]
+    },
+    "delete": {
+      "examples": [
+        {
+          "cmd": "fastly auth delete staging",
+          "title": "Delete a stored token"
+        }
+      ]
+    },
+    "policy": {
+      "list": {
+        "examples": [
+          {
+            "cmd": "fastly auth policy list",
+            "title": "List available policy permissions"
+          }
+        ]
+      },
+      "set": {
+        "examples": [
+          {
+            "cmd": "fastly auth policy set --name staging --policy readonly",
+            "title": "Restrict a stored token to read-only access"
+          }
+        ]
+      },
+      "show": {
+        "examples": [
+          {
+            "cmd": "fastly auth policy show",
+            "title": "Show the policy for the current token"
+          },
+          {
+            "cmd": "fastly auth policy show --name staging",
+            "title": "Show the policy for a specific token"
+          }
+        ]
+      }
     }
   },
   "backend": {
@@ -1243,12 +1302,6 @@
   "pops": {
     "apis": [
       "https://www.fastly.com/documentation/reference/api/utils/pops#list-pops"
-    ]
-  },
-  "profile": {
-    "apis": [
-      "https://www.fastly.com/documentation/reference/api/auth-tokens#get-token-current",
-      "https://www.fastly.com/documentation/reference/api/account/user#get-user"
     ]
   },
   "purge": {
