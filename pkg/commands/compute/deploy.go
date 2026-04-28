@@ -366,7 +366,10 @@ func validStatusCodeRange(status int) bool {
 // - Acquire the Service ID/Version.
 // - Validate there is a package to deploy.
 func (c *DeployCommand) Setup(out io.Writer) (serviceID string, err error) {
-	_, s := c.Globals.Token()
+	_, s, err := c.Globals.Token()
+	if err != nil {
+		return "", fmt.Errorf("resolving credential: %w", err)
+	}
 	if s == lookup.SourceUndefined {
 		return "", fsterr.ErrNoToken()
 	}

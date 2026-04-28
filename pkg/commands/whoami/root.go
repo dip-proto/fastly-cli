@@ -34,7 +34,10 @@ func NewRootCommand(parent argparser.Registerer, g *global.Data) *RootCommand {
 // Exec implements the command interface.
 func (c *RootCommand) Exec(_ io.Reader, out io.Writer) error {
 	debugMode, _ := strconv.ParseBool(c.Globals.Env.DebugMode)
-	token, _ := c.Globals.Token()
+	token, _, err := c.Globals.Token()
+	if err != nil {
+		return fmt.Errorf("resolving credential: %w", err)
+	}
 	apiEndpoint, _ := c.Globals.APIEndpoint()
 	data, err := undocumented.Call(undocumented.CallOptions{
 		APIEndpoint: apiEndpoint,

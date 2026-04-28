@@ -33,14 +33,21 @@ func NewShowCommand(parent argparser.Registerer, g *global.Data) *ShowCommand {
 
 func (c *ShowCommand) Exec(_ io.Reader, out io.Writer) error {
 	if c.name == "" {
-		_, src := c.Globals.Token()
+		_, src, err := c.Globals.Token()
+		if err != nil {
+			return fmt.Errorf("resolving credential: %w", err)
+		}
 		switch src {
 		case lookup.SourceUndefined:
 			return fmt.Errorf("no token configured; run `fastly auth login` or pass a token name")
 		case lookup.SourceFlag, lookup.SourceEnvironment:
 			return fmt.Errorf("current token is not stored (provided via --token or %s); use `fastly auth add` or `fastly auth show <name>`", env.APIToken)
 		case lookup.SourceFile, lookup.SourceDefault, lookup.SourceAuth:
-			c.name = c.Globals.AuthTokenName()
+			name, err := c.Globals.AuthTokenName()
+			if err != nil {
+				return fmt.Errorf("resolving credential name: %w", err)
+			}
+			c.name = name
 		}
 	}
 

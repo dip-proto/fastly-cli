@@ -33,7 +33,13 @@ func (c *TokenCommand) Exec(_ io.Reader, out io.Writer) error {
 		}
 	}
 
-	token, src := c.Globals.Token()
+	token, src, err := c.Globals.Token()
+	if err != nil {
+		return fsterr.RemediationError{
+			Inner:       fmt.Errorf("resolving credential: %w", err),
+			Remediation: fsterr.ProfileRemediation(),
+		}
+	}
 	if src == lookup.SourceUndefined || token == "" {
 		return fsterr.RemediationError{
 			Inner:       fmt.Errorf("no API token configured"),

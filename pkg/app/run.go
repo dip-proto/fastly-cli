@@ -405,7 +405,10 @@ func configureKingpin(data *global.Data) *kingpin.Application {
 // Tokens from --token (raw, unavailable when FASTLY_DISABLE_AUTH_COMMAND is
 // set) or FASTLY_API_TOKEN are assumed to be valid.
 func processToken(data *global.Data) (token string, tokenSource lookup.Source, err error) {
-	token, tokenSource = data.Token()
+	token, tokenSource, err = data.Token()
+	if err != nil {
+		return "", tokenSource, fmt.Errorf("resolving credential: %w", err)
+	}
 
 	switch tokenSource {
 	case lookup.SourceUndefined:
@@ -417,7 +420,10 @@ func processToken(data *global.Data) (token string, tokenSource lookup.Source, e
 		}
 		return "", tokenSource, nil
 	case lookup.SourceAuth:
-		name := data.AuthTokenName()
+		name, err := data.AuthTokenName()
+		if err != nil {
+			return token, tokenSource, fmt.Errorf("resolving credential name: %w", err)
+		}
 		if name == "" {
 			break
 		}
@@ -543,12 +549,24 @@ func checkTokenExpirationWarning(data *global.Data, commandName string) {
 		return
 	}
 
-	_, src := data.Token()
+	_, src, err := data.Token()
+	if err != nil {
+		if data.ErrLog != nil {
+			data.ErrLog.Add(fmt.Errorf("expiry warning: resolve token: %w", err))
+		}
+		return
+	}
 	if src != lookup.SourceAuth {
 		return
 	}
 
-	name := data.AuthTokenName()
+	name, err := data.AuthTokenName()
+	if err != nil {
+		if data.ErrLog != nil {
+			data.ErrLog.Add(fmt.Errorf("expiry warning: resolve credential name: %w", err))
+		}
+		return
+	}
 	if name == "" {
 		return
 	}
@@ -620,7 +638,10 @@ func ssoAuthentication(outputMessage string, data *global.Data, forceReAuth bool
 	}
 	text.Break(data.Output)
 
-	token, tokenSource = data.Token()
+	token, tokenSource, err = data.Token()
+	if err != nil {
+		return token, tokenSource, fmt.Errorf("resolving credential after SSO: %w", err)
+	}
 	if tokenSource == lookup.SourceUndefined {
 		return token, tokenSource, fsterr.ErrNoToken()
 	}
@@ -667,7 +688,7 @@ func displayToken(tokenSource lookup.Source, data *global.Data) {
 	case lookup.SourceEnvironment:
 		fmt.Fprintf(data.Output, "Fastly API token provided via %s\n\n", env.APIToken)
 	case lookup.SourceAuth:
-		name := data.AuthTokenName()
+		name, _ := data.AuthTokenName()
 		if name != "" {
 			fmt.Fprintf(data.Output, "Fastly API token provided via config file (auth: %s)\n\n", name)
 		} else {

@@ -95,7 +95,10 @@ func (c *RevokeCommand) validateFlags() error {
 }
 
 func (c *RevokeCommand) revokeCurrent(in io.Reader, out io.Writer) error {
-	tok, _ := c.Globals.Token()
+	tok, _, err := c.Globals.Token()
+	if err != nil {
+		return fmt.Errorf("resolving credential: %w", err)
+	}
 
 	names, err := findLocalTokensByValue(c.Globals, tok)
 	if err != nil {
@@ -290,7 +293,10 @@ func (c *RevokeCommand) revokeByFile(out io.Writer) error {
 }
 
 func (c *RevokeCommand) authClient() (api.Interface, error) {
-	tok, _ := c.Globals.Token()
+	tok, _, err := c.Globals.Token()
+	if err != nil {
+		return nil, fmt.Errorf("resolving credential: %w", err)
+	}
 	if tok == "" {
 		return nil, fsterr.RemediationError{
 			Inner:       fmt.Errorf("no token available for authentication"),

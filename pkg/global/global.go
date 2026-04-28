@@ -107,53 +107,82 @@ type Data struct {
 //   - The FASTLY_API_TOKEN environment variable.
 //   - The `profile` manifest field mapped to a credential name.
 //   - The default credential (if configured).
-func (d *Data) Token() (string, lookup.Source) {
+//
+// ErrNotFound silently falls through to the next source. ErrUnavailable
+// and ErrCorrupt propagate so a locked or broken store never causes a
+// credential name to be sent as a literal bearer token.
+func (d *Data) Token() (string, lookup.Source, error) {
 	// --token: check if it matches a stored auth token name first.
 	if d.Flags.Token != "" {
-		if t, _ := credentials.Lookup(d.Credentials, d.Flags.Token); t != nil && t.Token != "" {
-			return t.Token, lookup.SourceAuth
+		t, err := credentials.Lookup(d.Credentials, d.Flags.Token)
+		if err != nil {
+			return "", lookup.SourceUndefined, err
 		}
-		return d.Flags.Token, lookup.SourceFlag
+		if t != nil && t.Token != "" {
+			return t.Token, lookup.SourceAuth, nil
+		}
+		return d.Flags.Token, lookup.SourceFlag, nil
 	}
 
 	// FASTLY_API_TOKEN
 	if d.Env.APIToken != "" {
-		return d.Env.APIToken, lookup.SourceEnvironment
+		return d.Env.APIToken, lookup.SourceEnvironment, nil
 	}
 
 	if d.Manifest != nil && d.Manifest.File.Profile != "" {
-		if t, _ := credentials.Lookup(d.Credentials, d.Manifest.File.Profile); t != nil && t.Token != "" {
-			return t.Token, lookup.SourceAuth
+		t, err := credentials.Lookup(d.Credentials, d.Manifest.File.Profile)
+		if err != nil {
+			return "", lookup.SourceUndefined, err
+		}
+		if t != nil && t.Token != "" {
+			return t.Token, lookup.SourceAuth, nil
 		}
 	}
 
-	// Default credential.
-	if _, t, _ := credentials.GetDefault(d.Credentials); t != nil && t.Token != "" {
-		return t.Token, lookup.SourceAuth
+	name, err := credentials.DefaultOrEmpty(d.Credentials)
+	if err != nil {
+		return "", lookup.SourceUndefined, err
+	}
+	if name != "" {
+		t, err := credentials.Lookup(d.Credentials, name)
+		if err != nil {
+			return "", lookup.SourceUndefined, err
+		}
+		if t != nil && t.Token != "" {
+			return t.Token, lookup.SourceAuth, nil
+		}
 	}
 
-	return "", lookup.SourceUndefined
+	return "", lookup.SourceUndefined, nil
 }
 
 // AuthTokenName returns the name of the auth token being used, if any.
 // This is used for display purposes and for SSO refresh of named tokens.
-func (d *Data) AuthTokenName() string {
-	// If --token matches a stored auth token name, return that name.
+//
+// Errors follow the Token policy: ErrNotFound becomes ("", nil);
+// ErrUnavailable and ErrCorrupt propagate.
+func (d *Data) AuthTokenName() (string, error) {
 	if d.Flags.Token != "" {
-		if t, _ := credentials.Lookup(d.Credentials, d.Flags.Token); t != nil {
-			return d.Flags.Token
+		md, err := credentials.LookupMetadata(d.Credentials, d.Flags.Token)
+		if err != nil {
+			return "", err
 		}
-		return ""
+		if md != nil {
+			return d.Flags.Token, nil
+		}
+		return "", nil
 	}
 
 	if d.Manifest != nil && d.Manifest.File.Profile != "" {
-		if t, _ := credentials.Lookup(d.Credentials, d.Manifest.File.Profile); t != nil {
-			return d.Manifest.File.Profile
+		md, err := credentials.LookupMetadata(d.Credentials, d.Manifest.File.Profile)
+		if err != nil {
+			return "", err
+		}
+		if md != nil {
+			return d.Manifest.File.Profile, nil
 		}
 	}
-	// Otherwise return the default auth token name.
-	name, _ := credentials.DefaultOrEmpty(d.Credentials)
-	return name
+	return credentials.DefaultOrEmpty(d.Credentials)
 }
 
 // Verbose yields the verbose flag, which can only be set via flags.

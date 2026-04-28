@@ -1,6 +1,7 @@
 package global_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/fastly/cli/pkg/config"
@@ -107,7 +108,10 @@ func TestToken(t *testing.T) {
 			if tt.mutate != nil {
 				tt.mutate(d)
 			}
-			gotToken, gotSource := d.Token()
+			gotToken, gotSource, gotErr := d.Token()
+			if gotErr != nil {
+				t.Fatalf("Token() unexpected error: %v", gotErr)
+			}
 			if gotToken != tt.wantToken {
 				t.Errorf("Token() token = %q, want %q", gotToken, tt.wantToken)
 			}
@@ -177,7 +181,10 @@ func TestAuthTokenName(t *testing.T) {
 			if tt.mutate != nil {
 				tt.mutate(d)
 			}
-			got := d.AuthTokenName()
+			got, err := d.AuthTokenName()
+			if err != nil {
+				t.Fatalf("AuthTokenName() unexpected error: %v", err)
+			}
 			if got != tt.wantName {
 				t.Errorf("AuthTokenName() = %q, want %q", got, tt.wantName)
 			}
@@ -193,7 +200,10 @@ func TestTokenManifestProfileMissingNoSideEffect(t *testing.T) {
 	d.Manifest = &manifest.Data{File: manifest.File{Profile: "missing"}}
 	d.Output = &buf
 
-	token, source := d.Token()
+	token, source, err := d.Token()
+	if err != nil {
+		t.Fatalf("Token() unexpected error: %v", err)
+	}
 	if token != "default-token" {
 		t.Errorf("Token() = %q, want %q", token, "default-token")
 	}
@@ -202,5 +212,89 @@ func TestTokenManifestProfileMissingNoSideEffect(t *testing.T) {
 	}
 	if buf.String() != "" {
 		t.Errorf("Token() should not write to output, got: %q", buf.String())
+	}
+}
+
+// faultyStore injects errors into Get, Metadata, and DefaultName so
+// tests can drive the Token / AuthTokenName error contract.
+type faultyStore struct {
+	*credentials.MemoryStore
+	getErr  error
+	metaErr error
+}
+
+func (s *faultyStore) Get(name string) (*credentials.Token, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	return s.MemoryStore.Get(name)
+}
+
+func (s *faultyStore) Metadata(name string) (*credentials.Metadata, error) {
+	if s.metaErr != nil {
+		return nil, s.metaErr
+	}
+	return s.MemoryStore.Metadata(name)
+}
+
+func TestTokenPropagatesUnavailable(t *testing.T) {
+	mem := credentials.NewMemoryStore()
+	if err := mem.Set("user", &credentials.Token{Type: credentials.TypeStatic, Token: "x"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := mem.SetDefault("user"); err != nil {
+		t.Fatalf("SetDefault: %v", err)
+	}
+
+	d := &global.Data{Credentials: &faultyStore{MemoryStore: mem, getErr: credentials.ErrUnavailable}}
+	d.Flags.Token = "user"
+	_, _, err := d.Token()
+	if !errors.Is(err, credentials.ErrUnavailable) {
+		t.Fatalf("Token() with --token <stored> on unavailable store: err = %v, want ErrUnavailable", err)
+	}
+}
+
+func TestTokenPropagatesCorrupt(t *testing.T) {
+	mem := credentials.NewMemoryStore()
+	if err := mem.Set("user", &credentials.Token{Type: credentials.TypeStatic, Token: "x"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := mem.SetDefault("user"); err != nil {
+		t.Fatalf("SetDefault: %v", err)
+	}
+	d := &global.Data{Credentials: &faultyStore{MemoryStore: mem, getErr: credentials.ErrCorrupt}}
+	_, _, err := d.Token()
+	if !errors.Is(err, credentials.ErrCorrupt) {
+		t.Fatalf("Token() default lookup against corrupt store: err = %v, want ErrCorrupt", err)
+	}
+}
+
+func TestTokenNotFoundOnFlag(t *testing.T) {
+	mem := credentials.NewMemoryStore()
+	d := &global.Data{Credentials: mem}
+	d.Flags.Token = "raw-value"
+	tok, src, err := d.Token()
+	if err != nil {
+		t.Fatalf("Token() unexpected error: %v", err)
+	}
+	if tok != "raw-value" || src != lookup.SourceFlag {
+		t.Fatalf("Token() = (%q, %v), want (%q, %v)", tok, src, "raw-value", lookup.SourceFlag)
+	}
+}
+
+func TestAuthTokenNamePropagatesUnavailable(t *testing.T) {
+	mem := credentials.NewMemoryStore()
+	if err := mem.Set("user", &credentials.Token{Type: credentials.TypeStatic, Token: "x"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := mem.SetDefault("user"); err != nil {
+		t.Fatalf("SetDefault: %v", err)
+	}
+
+	d := &global.Data{Credentials: &faultyStore{MemoryStore: mem, metaErr: credentials.ErrUnavailable}}
+	d.Flags.Token = "user"
+	_, err := d.AuthTokenName()
+	if !errors.Is(err, credentials.ErrUnavailable) {
+		t.Fatalf("AuthTokenName() with --token <stored>: err = %v, want ErrUnavailable", err)
 	}
 }
