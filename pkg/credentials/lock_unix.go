@@ -7,8 +7,8 @@ import (
 	"syscall"
 )
 
-func (s *FileStore) acquireLock() (*fileLock, error) {
-	f, err := s.openLockFile()
+func acquireLockAt(path string) (*fileLock, error) {
+	f, err := openLockFileAt(path)
 	if err != nil {
 		return nil, err
 	}

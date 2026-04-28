@@ -27,11 +27,11 @@ func NewDeleteCommand(parent argparser.Registerer, g *global.Data) *DeleteComman
 }
 
 func (c *DeleteCommand) Exec(in io.Reader, out io.Writer) error {
-	existing, err := credentials.Lookup(c.Globals.Credentials, c.name)
+	md, err := credentials.LookupMetadata(c.Globals.Credentials, c.name)
 	if err != nil {
 		return fmt.Errorf("loading credential %q: %w", c.name, err)
 	}
-	if existing == nil {
+	if md == nil {
 		return fmt.Errorf("token %q not found", c.name)
 	}
 

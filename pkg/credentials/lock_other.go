@@ -2,11 +2,11 @@
 
 package credentials
 
-// acquireLock is a no-op on platforms without flock(2) or
+// acquireLockAt is a no-op on platforms without flock(2) or
 // LockFileEx. The CLI does not target plan9 or wasm in practice;
 // concurrent writers on these platforms may lose updates.
-func (s *FileStore) acquireLock() (*fileLock, error) {
-	f, err := s.openLockFile()
+func acquireLockAt(path string) (*fileLock, error) {
+	f, err := openLockFileAt(path)
 	if err != nil {
 		return nil, err
 	}
