@@ -263,11 +263,8 @@ func (s *KeychainStore) Get(name string) (*Token, error) {
 		return nil, ErrNotFound
 	}
 
-	tok, err := s.readSecret(name, keychainFieldToken)
+	tok, err := s.readSecretOptional(name, keychainFieldToken)
 	if err != nil {
-		if errors.Is(err, errKeychainMissing) {
-			return nil, fmt.Errorf("%w: credential %q listed in sidecar but missing from system keychain. Run `fastly auth delete %s` to forget it, or re-add it", ErrCorrupt, name, name)
-		}
 		return nil, err
 	}
 
@@ -305,6 +302,10 @@ func (s *KeychainStore) Get(name string) (*Token, error) {
 		}
 	}
 
+	if t.Token == "" && t.AccessToken == "" && t.RefreshToken == "" {
+		return nil, fmt.Errorf("%w: credential %q listed in sidecar but every secret entry is missing from the system keychain. Run `fastly auth delete %s` to forget it, or re-add it", ErrCorrupt, name, name)
+	}
+
 	return t, nil
 }
 
@@ -335,13 +336,22 @@ func (s *KeychainStore) readSecretOptional(name, field string) (string, error) {
 }
 
 // Set stores a copy of t under name. It writes the keychain entries
-// first, then atomically rewrites the sidecar; if the sidecar write
-// fails, keychain writes are rolled back. The sidecar is always the
-// conservative observer: a sidecar entry implies the keychain has
-// the named secret.
+// first, then atomically rewrites the sidecar; on sidecar-write
+// failure, keychain writes are rolled back. The sidecar is the
+// conservative observer: a sidecar entry implies the keychain holds
+// at least one secret for the credential.
+//
+// At least one of Token, AccessToken, or RefreshToken must be
+// non-empty; an all-empty record would land in the ErrCorrupt drift
+// case on the next Get. SSO credentials whose primary Token has not
+// yet been populated by a refresh are accepted as long as some
+// refresh material is present.
 func (s *KeychainStore) Set(name string, t *Token) error {
 	if t == nil {
 		return fmt.Errorf("credentials: Set requires a non-nil token")
+	}
+	if t.Token == "" && t.AccessToken == "" && t.RefreshToken == "" {
+		return fmt.Errorf("credentials: Set requires at least one non-empty secret field (Token, AccessToken, or RefreshToken)")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -424,8 +434,12 @@ func (s *KeychainStore) Set(name string, t *Token) error {
 	return nil
 }
 
-// Delete removes name. Absent keychain entries are tolerated so the
-// store stays consistent regardless of pre-existing drift.
+// Delete removes name. The sidecar is rewritten first so a failure
+// during keychain cleanup leaves the store in the recoverable
+// direction (orphan keychain entries, no listing) rather than the
+// unrecoverable one (listing without secret). Pre-existing orphan
+// keychain drift is tolerated; `auth doctor` is the right place to
+// surface it.
 func (s *KeychainStore) Delete(name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -444,20 +458,23 @@ func (s *KeychainStore) Delete(name string) error {
 		return ErrNotFound
 	}
 
+	delete(f.Tokens, name)
+	if f.Default == name {
+		f.Default = ""
+	}
+	if err := s.save(f); err != nil {
+		return err
+	}
+
 	for _, field := range []string{keychainFieldToken, keychainFieldAccessToken, keychainFieldRefreshToken} {
 		if err := s.client.Delete(keychainService, keychainAccount(name, field)); err != nil {
 			if errors.Is(err, keyring.ErrNotFound) {
 				continue
 			}
-			return fmt.Errorf("%w: keychain delete %s/%s: %v", ErrUnavailable, name, field, err)
+			return fmt.Errorf("%w: keychain delete %s/%s (sidecar already updated; rerun delete to retry): %v", ErrUnavailable, name, field, err)
 		}
 	}
-
-	delete(f.Tokens, name)
-	if f.Default == name {
-		f.Default = ""
-	}
-	return s.save(f)
+	return nil
 }
 
 // DefaultName returns the current default credential name (sidecar only).

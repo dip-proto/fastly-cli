@@ -121,6 +121,9 @@ func collectLegacyCredentials(c *legacyConfig) (map[string]*Token, string) {
 		if at == nil {
 			continue
 		}
+		if at.Token == "" && at.AccessToken == "" && at.RefreshToken == "" {
+			continue
+		}
 		out[name] = legacyAuthTokenToToken(at)
 	}
 	if c.Auth.Default != "" {
@@ -133,6 +136,9 @@ func collectLegacyCredentials(c *legacyConfig) (map[string]*Token, string) {
 		if p == nil {
 			continue
 		}
+		if p.Token == "" && p.AccessToken == "" && p.RefreshToken == "" {
+			continue
+		}
 		if _, exists := out[name]; exists {
 			continue
 		}
@@ -142,7 +148,7 @@ func collectLegacyCredentials(c *legacyConfig) (map[string]*Token, string) {
 		}
 	}
 
-	if c.User.Email != "" || c.User.Token != "" {
+	if c.User.Token != "" {
 		name := legacyUserName
 		if _, exists := out[name]; exists {
 			name = legacyUserCollisionName

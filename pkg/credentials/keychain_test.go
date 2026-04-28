@@ -202,6 +202,103 @@ func TestKeychainSetUpdatesOverwriteSecret(t *testing.T) {
 	}
 }
 
+// TestKeychainSetRejectsAllEmptySecrets verifies Set refuses an empty
+// credential. Storing one would leave the sidecar listing it while
+// every keychain entry is absent: the unrecoverable drift the design
+// is meant to prevent.
+func TestKeychainSetRejectsAllEmptySecrets(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	side := filepath.Join(dir, "credentials.keychain.toml")
+	store := credentials.NewKeychainStoreForTest(side, newFakeKeyring())
+	if err := store.Set("ghost", &credentials.Token{Type: credentials.TypeStatic}); err == nil {
+		t.Fatal("expected Set to reject all-empty token, got nil")
+	}
+}
+
+// TestKeychainSetSSOWithoutPrimaryToken ensures that an SSO
+// credential whose primary Token has not yet been populated by a
+// refresh is still acceptable, as long as access or refresh
+// material is present. This covers the legacy-config migration
+// path that creates SSO records without a primary token.
+func TestKeychainSetSSOWithoutPrimaryToken(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	side := filepath.Join(dir, "credentials.keychain.toml")
+	fake := newFakeKeyring()
+	store := credentials.NewKeychainStoreForTest(side, fake)
+	sso := &credentials.Token{
+		Type:         credentials.TypeSSO,
+		AccessToken:  "acc",
+		RefreshToken: "ref",
+		Email:        "u@example.com",
+	}
+	if err := store.Set("partial-sso", sso); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	got, err := store.Get("partial-sso")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.AccessToken != "acc" || got.RefreshToken != "ref" {
+		t.Fatalf("round-trip lost SSO secrets: got %+v", got)
+	}
+	if got.Token != "" {
+		t.Errorf("Token should remain empty until refresh, got %q", got.Token)
+	}
+}
+
+// TestKeychainDeleteSavesSidecarFirst ensures that if the keychain
+// cleanup phase fails after the sidecar has been rewritten, the
+// store is left in the recoverable direction (orphan keychain
+// entries, no listing) rather than the unrecoverable one.
+func TestKeychainDeleteSavesSidecarFirst(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	side := filepath.Join(dir, "credentials.keychain.toml")
+	failing := &deleteFailingKeyring{fakeKeyring: newFakeKeyring()}
+	store := credentials.NewKeychainStoreForTest(side, failing)
+	if err := store.Set("a", &credentials.Token{Type: credentials.TypeStatic, Token: "x"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	failing.failOnDelete = true
+	if err := store.Delete("a"); err == nil {
+		t.Fatal("expected Delete to surface keychain failure")
+	}
+
+	// The sidecar should already reflect the deletion: a re-read
+	// must show no credential, and a follow-up Delete must return
+	// ErrNotFound.
+	names, err := store.Names()
+	if err != nil {
+		t.Fatalf("Names after failed Delete: %v", err)
+	}
+	if len(names) != 0 {
+		t.Fatalf("Names = %v, want []", names)
+	}
+	if err := store.Delete("a"); !errors.Is(err, credentials.ErrNotFound) {
+		t.Fatalf("re-Delete: err = %v, want ErrNotFound", err)
+	}
+}
+
+// deleteFailingKeyring lets a test toggle a flag that forces every
+// subsequent Delete to error out, to reproduce a half-finished
+// keychain cleanup.
+type deleteFailingKeyring struct {
+	*fakeKeyring
+	failOnDelete bool
+}
+
+func (f *deleteFailingKeyring) Delete(service, user string) error {
+	if f.failOnDelete {
+		return errSimulatedKeychainFailure
+	}
+	return f.fakeKeyring.Delete(service, user)
+}
+
+var errSimulatedKeychainFailure = errors.New("simulated keychain failure")
+
 // TestKeychainDeleteToleratesMissingKeychainEntries ensures that a
 // Delete after orphan-keychain drift leaves the sidecar in a
 // consistent state.
