@@ -471,7 +471,7 @@ func (s *KeychainStore) Delete(name string) error {
 			if errors.Is(err, keyring.ErrNotFound) {
 				continue
 			}
-			return fmt.Errorf("%w: keychain delete %s/%s (sidecar already updated; rerun delete to retry): %v", ErrUnavailable, name, field, err)
+			return fmt.Errorf("%w: keychain delete %s/%s (sidecar already updated; the credential is gone from `auth list` but the OS keychain still holds the entry. Remove it via your OS keychain UI or `secret-tool` / `cmdkey`): %v", ErrUnavailable, name, field, err)
 		}
 	}
 	return nil
