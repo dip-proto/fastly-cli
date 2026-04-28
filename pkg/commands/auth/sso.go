@@ -127,7 +127,7 @@ func RunSSOWithTokenName(in io.Reader, out io.Writer, g *global.Data, forceReAut
 		msg += " Use 'fastly auth list' to view tokens."
 	}
 	text.Success(out, msg)
-	text.Info(out, "Token saved to %s", g.CredentialsPath)
+	text.Info(out, "%s", credentials.SavedMessage(credentials.Backend(g.CredentialsBackend), g.CredentialsPath))
 	return nil
 }
 

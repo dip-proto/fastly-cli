@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/fastly/cli/pkg/argparser"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -46,7 +47,7 @@ func (c *LoginCommand) Exec(in io.Reader, out io.Writer) error {
 	}
 
 	text.Success(out, "Authenticated as %s (token stored as %q)", md.Email, name)
-	text.Info(out, "Token saved to %s", c.Globals.CredentialsPath)
+	text.Info(out, "%s", credentials.SavedMessage(credentials.Backend(c.Globals.CredentialsBackend), c.Globals.CredentialsPath))
 	return nil
 }
 

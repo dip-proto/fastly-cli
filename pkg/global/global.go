@@ -63,9 +63,14 @@ type Data struct {
 	// Credentials is the credential store. Token resolution assumes
 	// it is non-nil.
 	Credentials credentials.Store
-	// CredentialsPath is the credentials.toml path for user-facing
-	// messages. Empty for non-file backends.
+	// CredentialsPath is the credential store's user-visible path. For
+	// the keychain backend this is the metadata sidecar, not a file
+	// with secret material.
 	CredentialsPath string
+	// CredentialsBackend is the selected backend tag ("file" or
+	// "keychain"). Save-message helpers and `auth backend show` read
+	// it so they don't re-derive from env or disk.
+	CredentialsBackend string
 	// Env is all the data that is provided by the environment.
 	Env config.Environment
 	// ErrLog provides an interface for recording errors to disk.

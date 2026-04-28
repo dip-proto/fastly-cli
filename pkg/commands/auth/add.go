@@ -84,6 +84,6 @@ func (c *AddCommand) Exec(_ io.Reader, out io.Writer) error {
 	if setDefault {
 		text.Info(out, "Token %q set as default (no previous default was configured)", name)
 	}
-	text.Info(out, "Token saved to %s", c.Globals.CredentialsPath)
+	text.Info(out, "%s", credentials.SavedMessage(credentials.Backend(c.Globals.CredentialsBackend), c.Globals.CredentialsPath))
 	return nil
 }

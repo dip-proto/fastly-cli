@@ -93,19 +93,23 @@ var Init = func(args []string, stdin io.Reader) (*global.Data, error) {
 		}
 	}
 
-	// Run the legacy-config migration only when credentials.toml is
-	// absent, so the steady-state path skips the legacy-config parse.
-	credStore := credentials.NewFileStore(credentials.FilePath)
-	if _, statErr := os.Stat(credentials.FilePath); errors.Is(statErr, os.ErrNotExist) {
-		migrated, err := credentials.Migrate(config.FilePath, credStore)
-		if err != nil {
-			return nil, fmt.Errorf("migrating credentials: %w", err)
-		}
-		if migrated {
-			fmt.Fprintf(os.Stderr,
-				"Credentials moved to %s. The CLI no longer reads or writes [auth]/[profile]/[user] sections of config.toml; you can remove them by hand.\n",
-				credentials.FilePath)
-		}
+	// Resolve the credentials backend and open the store. SelectBackend
+	// reads only env and the backend-selection file, so the store opens
+	// before cfg.Read. Migrate gates on the store being empty, so a
+	// populated store skips the legacy parse on its own.
+	credBackend := credentials.SelectBackend(os.Getenv)
+	credStore, credPath, err := credentials.Open(credBackend)
+	if err != nil {
+		return nil, fmt.Errorf("opening credential store: %w", err)
+	}
+	migrated, err := credentials.Migrate(config.FilePath, credStore)
+	if err != nil {
+		return nil, fmt.Errorf("migrating credentials: %w", err)
+	}
+	if migrated {
+		fmt.Fprintf(os.Stderr,
+			"Credentials moved to %s. The CLI no longer reads or writes [auth]/[profile]/[user] sections of config.toml; you can remove them by hand.\n",
+			credPath)
 	}
 
 	// Extract a subset of configuration options from the local app directory.
@@ -182,22 +186,23 @@ var Init = func(args []string, stdin io.Reader) (*global.Data, error) {
 	fastly.UserAgent = fmt.Sprintf("%s, %s", useragent.Name, fastly.UserAgent)
 
 	return &global.Data{
-		APIClientFactory: factory,
-		Args:             args,
-		Config:           cfg,
-		ConfigPath:       config.FilePath,
-		Credentials:      credStore,
-		CredentialsPath:  credentials.FilePath,
-		Env:              e,
-		ErrLog:           fsterr.Log,
-		ErrOutput:        os.Stderr,
-		ExecuteWasmTools: compute.ExecuteWasmTools,
-		HTTPClient:       httpClient,
-		Manifest:         &md,
-		Opener:           open.Run,
-		Output:           out,
-		Versioners:       versioners,
-		Input:            in,
+		APIClientFactory:   factory,
+		Args:               args,
+		Config:             cfg,
+		ConfigPath:         config.FilePath,
+		Credentials:        credStore,
+		CredentialsPath:    credPath,
+		CredentialsBackend: string(credBackend),
+		Env:                e,
+		ErrLog:             fsterr.Log,
+		ErrOutput:          os.Stderr,
+		ExecuteWasmTools:   compute.ExecuteWasmTools,
+		HTTPClient:         httpClient,
+		Manifest:           &md,
+		Opener:             open.Run,
+		Output:             out,
+		Versioners:         versioners,
+		Input:              in,
 	}, nil
 }
 
@@ -677,7 +682,7 @@ func promptForAuth(data *global.Data) (string, lookup.Source, error) {
 	}
 
 	text.Success(data.Output, "Authenticated as %s (token stored as %q)", md.Email, name)
-	text.Info(data.Output, "Token saved to %s", data.CredentialsPath)
+	text.Info(data.Output, "%s", credentials.SavedMessage(credentials.Backend(data.CredentialsBackend), data.CredentialsPath))
 	return token, lookup.SourceAuth, nil
 }
 
