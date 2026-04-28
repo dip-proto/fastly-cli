@@ -204,9 +204,14 @@ func Define( // nolint:revive // function-length
 		authUse := authcmd.NewUseCommand(authCmdRoot.CmdClause, data)
 		authRevoke := authcmd.NewRevokeCommand(authCmdRoot.CmdClause, data)
 		authToken := authcmd.NewTokenCommand(authCmdRoot.CmdClause, data)
+		authMigrate := authcmd.NewMigrateCommand(authCmdRoot.CmdClause, data)
+		authBackendRoot := authcmd.NewBackendCommand(authCmdRoot.CmdClause, data)
+		authBackendShow := authcmd.NewBackendShowCommand(authBackendRoot.CmdClause, data)
+		authBackendSet := authcmd.NewBackendSetCommand(authBackendRoot.CmdClause, data)
 		authCommands = []argparser.Command{
 			authCmdRoot, authLogin, authAdd, authDelete,
 			authList, authShow, authUse, authRevoke, authToken,
+			authMigrate, authBackendRoot, authBackendShow, authBackendSet,
 		}
 
 		authtokenCmdRoot := authtoken.NewRootCommand(app, data)
