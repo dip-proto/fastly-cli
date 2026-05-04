@@ -15,7 +15,7 @@ import (
 
 	"github.com/fastly/cli/pkg/api"
 	"github.com/fastly/cli/pkg/argparser"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -97,7 +97,10 @@ func (c *RevokeCommand) validateFlags() error {
 func (c *RevokeCommand) revokeCurrent(in io.Reader, out io.Writer) error {
 	tok, _ := c.Globals.Token()
 
-	names := findLocalTokensByValue(&c.Globals.Config, tok)
+	names, err := findLocalTokensByValue(c.Globals, tok)
+	if err != nil {
+		return err
+	}
 	if err := c.confirmDefaultRevocation(names, in, out); err != nil {
 		if errors.Is(err, errCancelled) {
 			return nil
@@ -121,7 +124,10 @@ func (c *RevokeCommand) revokeCurrent(in io.Reader, out io.Writer) error {
 }
 
 func (c *RevokeCommand) revokeByName(in io.Reader, out io.Writer) error {
-	entry := c.Globals.Config.GetAuthToken(c.name)
+	entry, err := credentials.Lookup(c.Globals.Credentials, c.name)
+	if err != nil {
+		return fmt.Errorf("loading credential %q: %w", c.name, err)
+	}
 	if entry == nil {
 		return fmt.Errorf("token %q not found", c.name)
 	}
@@ -151,7 +157,11 @@ func (c *RevokeCommand) revokeByName(in io.Reader, out io.Writer) error {
 	}
 
 	names := []string{c.name}
-	for _, n := range findLocalTokensByValue(&c.Globals.Config, entry.Token) {
+	matches, err := findLocalTokensByValue(c.Globals, entry.Token)
+	if err != nil {
+		return err
+	}
+	for _, n := range matches {
 		if n != c.name {
 			names = append(names, n)
 		}
@@ -165,7 +175,10 @@ func (c *RevokeCommand) revokeByTokenValue(in io.Reader, out io.Writer) error {
 		return err
 	}
 
-	names := findLocalTokensByValue(&c.Globals.Config, raw)
+	names, err := findLocalTokensByValue(c.Globals, raw)
+	if err != nil {
+		return err
+	}
 	if err := c.confirmDefaultRevocation(names, in, out); err != nil {
 		if errors.Is(err, errCancelled) {
 			return nil
@@ -216,7 +229,10 @@ func (c *RevokeCommand) revokeByID(out io.Writer) error {
 	} else {
 		text.Success(out, "Revoked token '%s'", c.id)
 	}
-	names := findLocalTokensByID(&c.Globals.Config, c.id)
+	names, err := findLocalTokensByID(c.Globals, c.id)
+	if err != nil {
+		return err
+	}
 	if len(names) == 0 {
 		text.Info(out, "No local token entry with matching API token ID found; local cleanup skipped\n")
 		return nil
@@ -260,7 +276,11 @@ func (c *RevokeCommand) revokeByFile(out io.Writer) error {
 
 	var names []string
 	for _, id := range ids {
-		names = append(names, findLocalTokensByID(&c.Globals.Config, id)...)
+		matches, err := findLocalTokensByID(c.Globals, id)
+		if err != nil {
+			return err
+		}
+		names = append(names, matches...)
 	}
 	if len(names) == 0 {
 		text.Info(out, "No local token entries with matching API token IDs found; local cleanup skipped\n")
@@ -293,7 +313,10 @@ func (c *RevokeCommand) buildClient(token string) (api.Interface, error) {
 }
 
 func (c *RevokeCommand) confirmDefaultRevocation(names []string, in io.Reader, out io.Writer) error {
-	def := c.Globals.Config.Auth.Default
+	def, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
 	if def == "" {
 		return nil
 	}
@@ -404,24 +427,44 @@ func readTokenIDFile(path string) ([]string, error) {
 	return ids, nil
 }
 
-func findLocalTokensByValue(cfg *config.File, raw string) []string {
-	var names []string
-	for name, entry := range cfg.Auth.Tokens {
-		if entry.Token == raw {
-			names = append(names, name)
+// findLocalTokensByValue returns credential names whose Token equals
+// raw. Calls Get() per name; the cost is fine for a rare operation.
+func findLocalTokensByValue(g *global.Data, raw string) ([]string, error) {
+	names, err := g.Credentials.Names()
+	if err != nil {
+		return nil, err
+	}
+	var matches []string
+	for _, name := range names {
+		entry, err := credentials.Lookup(g.Credentials, name)
+		if err != nil {
+			return nil, fmt.Errorf("loading credential %q: %w", name, err)
+		}
+		if entry != nil && entry.Token == raw {
+			matches = append(matches, name)
 		}
 	}
-	return names
+	return matches, nil
 }
 
-func findLocalTokensByID(cfg *config.File, id string) []string {
-	var names []string
-	for name, entry := range cfg.Auth.Tokens {
-		if entry.APITokenID == id {
-			names = append(names, name)
+// findLocalTokensByID returns credential names whose APITokenID
+// metadata equals id. Reads metadata only.
+func findLocalTokensByID(g *global.Data, id string) ([]string, error) {
+	names, err := g.Credentials.Names()
+	if err != nil {
+		return nil, err
+	}
+	var matches []string
+	for _, name := range names {
+		md, err := credentials.LookupMetadata(g.Credentials, name)
+		if err != nil {
+			return nil, fmt.Errorf("loading metadata %q: %w", name, err)
+		}
+		if md != nil && md.APITokenID == id {
+			matches = append(matches, name)
 		}
 	}
-	return names
+	return matches, nil
 }
 
 func (c *RevokeCommand) removeLocalTokens(names []string, out io.Writer) error {
@@ -429,19 +472,20 @@ func (c *RevokeCommand) removeLocalTokens(names []string, out io.Writer) error {
 		return nil
 	}
 
-	originalDefault := c.Globals.Config.Auth.Default
+	originalDefault, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
 	removedDefault := false
 	for _, name := range names {
 		if name == originalDefault {
 			removedDefault = true
 		}
-		c.Globals.Config.DeleteAuthToken(name)
-	}
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-		return fsterr.RemediationError{
-			Inner:       fmt.Errorf("token(s) revoked remotely but failed to update local config: %w", err),
-			Remediation: fmt.Sprintf("Check file permissions on %s. The local config may be stale; use 'fastly auth delete' to clean up manually.", c.Globals.ConfigPath),
+		if err := c.Globals.Credentials.Delete(name); err != nil {
+			return fsterr.RemediationError{
+				Inner:       fmt.Errorf("token(s) revoked remotely but failed to remove local entry %q: %w", name, err),
+				Remediation: fmt.Sprintf("Check file permissions on %s. The local store may be stale; use 'fastly auth delete' to clean up manually.", c.Globals.CredentialsPath),
+			}
 		}
 	}
 
@@ -450,11 +494,7 @@ func (c *RevokeCommand) removeLocalTokens(names []string, out io.Writer) error {
 	}
 
 	if removedDefault {
-		if c.Globals.Config.Auth.Default != "" {
-			text.Info(out, "Default token reassigned to %q\n", c.Globals.Config.Auth.Default)
-		} else {
-			text.Warning(out, "No default token configured; use 'fastly auth use <name>' to set one\n")
-		}
+		text.Warning(out, "No default token configured; use 'fastly auth use <name>' to set one\n")
 	}
 	return nil
 }

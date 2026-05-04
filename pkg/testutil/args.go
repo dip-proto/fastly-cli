@@ -109,21 +109,10 @@ func MockGlobalData(args []string, stdout io.Writer) *global.Data {
 		Args:             args,
 		APIClientFactory: mock.APIClient(mock.API{}),
 		AuthServer:       &MockAuthServer{},
-		Config: config.File{
-			Auth: config.Auth{
-				Default: "user",
-				Tokens: config.AuthTokens{
-					"user": &config.AuthToken{
-						Type:  config.AuthTokenTypeStatic,
-						Token: "mock-token",
-						Email: "test@example.com",
-					},
-				},
-			},
-		},
-		ConfigPath:      configPath,
-		Credentials:     NewMockCredentialStore(),
-		CredentialsPath: configPath,
+		Config:           config.File{},
+		ConfigPath:       configPath,
+		Credentials:      NewMockCredentialStore(),
+		CredentialsPath:  configPath,
 		Env:              config.Environment{},
 		ErrLog:           errors.Log,
 		ErrOutput:        stdout,

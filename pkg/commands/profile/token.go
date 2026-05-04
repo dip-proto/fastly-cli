@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/fastly/cli/pkg/argparser"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -39,36 +39,45 @@ func (c *TokenCommand) Exec(_ io.Reader, out io.Writer) (err error) {
 		text.Deprecated(out, "This command will be removed in a future release. Use 'fastly auth show' instead.\n\n")
 	}
 
-	var name string
-	if c.profile != "" {
-		name = c.profile
-	}
+	name := c.profile
 	if c.Globals.Flags.Profile != "" {
 		name = c.Globals.Flags.Profile
 	}
 
 	if name != "" {
-		at := c.Globals.Config.GetAuthToken(name)
+		at, err := credentials.Lookup(c.Globals.Credentials, name)
+		if err != nil {
+			return fmt.Errorf("loading credential %q: %w", name, err)
+		}
+		if at == nil {
+			return fsterr.RemediationError{
+				Inner:       fmt.Errorf("the profile '%s' does not exist", name),
+				Remediation: fsterr.ProfileRemediation(),
+			}
+		}
+		if err := checkTokenValidity(name, at, c.tokenTTL); err != nil {
+			return err
+		}
+		text.Output(out, at.Token)
+		return nil
+	}
+
+	def, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
+	if def != "" {
+		at, err := credentials.Lookup(c.Globals.Credentials, def)
+		if err != nil {
+			return fmt.Errorf("loading credential %q: %w", def, err)
+		}
 		if at != nil {
-			if err = checkTokenValidity(name, at, c.tokenTTL); err != nil {
+			if err := checkTokenValidity(def, at, c.tokenTTL); err != nil {
 				return err
 			}
 			text.Output(out, at.Token)
 			return nil
 		}
-		msg := fmt.Sprintf("the profile '%s' does not exist", name)
-		return fsterr.RemediationError{
-			Inner:       errors.New(msg),
-			Remediation: fsterr.ProfileRemediation(),
-		}
-	}
-
-	if name, at := c.Globals.Config.GetDefaultAuthToken(); at != nil {
-		if err = checkTokenValidity(name, at, c.tokenTTL); err != nil {
-			return err
-		}
-		text.Output(out, at.Token)
-		return nil
 	}
 	return fsterr.RemediationError{
 		Inner:       errors.New("no profiles available"),
@@ -76,9 +85,9 @@ func (c *TokenCommand) Exec(_ io.Reader, out io.Writer) (err error) {
 	}
 }
 
-func checkTokenValidity(name string, at *config.AuthToken, ttl time.Duration) error {
+func checkTokenValidity(name string, at *credentials.Token, ttl time.Duration) error {
 	var expiryStr string
-	if at.Type == config.AuthTokenTypeSSO {
+	if at.Type == credentials.TypeSSO {
 		expiryStr = at.RefreshExpiresAt
 	} else {
 		expiryStr = at.APITokenExpiresAt

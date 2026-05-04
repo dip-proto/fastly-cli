@@ -172,8 +172,8 @@ func TestProfileList(t *testing.T) {
 			},
 			WantOutputs: []string{
 				"Default profile highlighted in red.",
-				"foo\n\nDefault: true\nEmail: foo@example.com\nToken: 123",
-				"bar\n\nDefault: false\nEmail: bar@example.com\nToken: 456",
+				"foo\n\nDefault: true\nEmail: foo@example.com",
+				"bar\n\nDefault: false\nEmail: bar@example.com",
 			},
 		},
 		{
@@ -257,9 +257,9 @@ func TestProfileList(t *testing.T) {
 			},
 			WantOutputs: []string{
 				`"bar"`,
-				`"token": "456"`,
 				`"foo"`,
-				`"token": "123"`,
+				`"Email": "bar@example.com"`,
+				`"Email": "foo@example.com"`,
 			},
 		},
 	}

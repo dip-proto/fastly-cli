@@ -2,10 +2,11 @@ package profile
 
 import (
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/fastly/cli/pkg/argparser"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -36,11 +37,16 @@ func (c *ListCommand) Exec(_ io.Reader, out io.Writer) error {
 		return fsterr.ErrInvalidVerboseJSONCombo
 	}
 
-	if ok, err := c.WriteJSON(out, c.Globals.Config.Auth.Tokens); ok {
+	tokens, err := credentials.AllMetadata(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("listing credentials: %w", err)
+	}
+
+	if ok, err := c.WriteJSON(out, tokens); ok {
 		return err
 	}
 
-	if len(c.Globals.Config.Auth.Tokens) == 0 {
+	if len(tokens) == 0 {
 		msg := "no profiles available"
 		return fsterr.RemediationError{
 			Inner:       errors.New(msg),
@@ -48,37 +54,39 @@ func (c *ListCommand) Exec(_ io.Reader, out io.Writer) error {
 		}
 	}
 
-	defaultName := c.Globals.Config.Auth.Default
+	defaultName, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
 
 	if defaultName != "" {
-		if at := c.Globals.Config.Auth.Tokens[defaultName]; at != nil {
+		if md := tokens[defaultName]; md != nil {
 			if c.Globals.Verbose() {
 				text.Break(out)
 			}
 			text.Info(out, "Default profile highlighted in red.\n\n")
-			display(defaultName, at, true, out, text.BoldRed)
+			display(defaultName, md, true, out, text.BoldRed)
 		}
 	}
 
-	for name, at := range c.Globals.Config.Auth.Tokens {
+	for name, md := range tokens {
 		if name != defaultName {
 			text.Break(out)
-			display(name, at, false, out, text.Bold)
+			display(name, md, false, out, text.Bold)
 		}
 	}
 	return nil
 }
 
-func display(name string, at *config.AuthToken, isDefault bool, out io.Writer, style func(a ...any) string) {
+func display(name string, md *credentials.Metadata, isDefault bool, out io.Writer, style func(a ...any) string) {
 	text.Output(out, style(name))
 	text.Break(out)
 	text.Output(out, "%s: %t", style("Default"), isDefault)
-	text.Output(out, "%s: %s", style("Email"), at.Email)
-	text.Output(out, "%s: %s", style("Token"), at.Token)
-	isSSO := at.Type == config.AuthTokenTypeSSO
+	text.Output(out, "%s: %s", style("Email"), md.Email)
+	isSSO := md.Type == credentials.TypeSSO
 	text.Output(out, "%s: %t", style("SSO"), isSSO)
 	if isSSO {
-		text.Output(out, "%s: %s", style("Account ID"), at.AccountID)
-		text.Output(out, "%s: %s", style("Label"), at.Label)
+		text.Output(out, "%s: %s", style("Account ID"), md.AccountID)
+		text.Output(out, "%s: %s", style("Label"), md.Label)
 	}
 }

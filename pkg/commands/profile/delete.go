@@ -1,10 +1,12 @@
 package profile
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/fastly/cli/pkg/argparser"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
 )
@@ -31,21 +33,26 @@ func (c *DeleteCommand) Exec(_ io.Reader, out io.Writer) error {
 		text.Deprecated(out, "This command will be removed in a future release. Use 'fastly auth delete' instead.\n\n")
 	}
 
-	if !c.Globals.Config.DeleteAuthToken(c.profile) {
-		return fmt.Errorf("the specified profile does not exist")
-	}
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
+	if err := c.Globals.Credentials.Delete(c.profile); err != nil {
+		if errors.Is(err, credentials.ErrNotFound) {
+			return fmt.Errorf("the specified profile does not exist")
+		}
 		return err
 	}
+
 	if c.Globals.Verbose() {
 		text.Break(out)
 	}
 	text.Success(out, "Profile '%s' deleted", c.profile)
 
-	if c.Globals.Config.Auth.Default == "" && len(c.Globals.Config.Auth.Tokens) > 0 {
+	def, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
+	names, _ := c.Globals.Credentials.Names()
+	if def == "" && len(names) > 0 {
 		text.Break(out)
-		text.Warning(out, "At least one account profile should be set as the 'default'. Run `fastly profile update <NAME>` and ensure the profile is set to be the default.")
+		text.Warning(out, "No default profile configured. Run `fastly auth use <name>` to set one.")
 	}
 	return nil
 }

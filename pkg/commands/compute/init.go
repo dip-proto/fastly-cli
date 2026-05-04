@@ -156,10 +156,11 @@ func (c *InitCommand) Exec(in io.Reader, out io.Writer) (err error) {
 		return err
 	}
 
-	// Assign the default auth token email if available.
 	email := ""
-	if _, at := c.Globals.Config.GetDefaultAuthToken(); at != nil && at.Email != "" {
-		email = at.Email
+	if defName, err := c.Globals.Credentials.DefaultName(); err == nil {
+		if at, err := c.Globals.Credentials.Get(defName); err == nil && at.Email != "" {
+			email = at.Email
+		}
 	}
 
 	var (

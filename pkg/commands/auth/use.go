@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/fastly/cli/pkg/argparser"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
 )
@@ -25,14 +27,12 @@ func NewUseCommand(parent argparser.Registerer, g *global.Data) *UseCommand {
 }
 
 func (c *UseCommand) Exec(_ io.Reader, out io.Writer) error {
-	if err := c.Globals.Config.SetDefaultAuthToken(c.name); err != nil {
+	if err := c.Globals.Credentials.SetDefault(c.name); err != nil {
+		if errors.Is(err, credentials.ErrNotFound) {
+			return fmt.Errorf("token %q not found", c.name)
+		}
 		return err
 	}
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-		return fmt.Errorf("error saving config: %w", err)
-	}
-
 	text.Success(out, "Default token switched to %q", c.name)
 	return nil
 }

@@ -86,7 +86,7 @@ func TestAuthRevoke(t *testing.T) {
 			DontWantOutput: "Revoked",
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("mytoken") == nil {
+				if testutil.CredentialOrNil(opts, "mytoken") == nil {
 					t.Error("expected token to still exist after decline")
 				}
 			},
@@ -123,10 +123,10 @@ func TestAuthRevoke(t *testing.T) {
 			WantOutputs: []string{`Revoked token "secondary"`, `Removed local token entry "secondary"`},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("secondary") != nil {
+				if testutil.CredentialOrNil(opts, "secondary") != nil {
 					t.Error("expected secondary token to be removed")
 				}
-				if opts.Config.GetAuthToken("primary") == nil {
+				if testutil.CredentialOrNil(opts, "primary") == nil {
 					t.Error("expected primary token to still exist")
 				}
 			},
@@ -152,7 +152,7 @@ func TestAuthRevoke(t *testing.T) {
 			WantOutputs: []string{"already revoked", `Removed local token entry "secondary"`},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("secondary") != nil {
+				if testutil.CredentialOrNil(opts, "secondary") != nil {
 					t.Error("expected secondary token to be removed after 401")
 				}
 			},
@@ -174,13 +174,13 @@ func TestAuthRevoke(t *testing.T) {
 			DontWantOutput: "Removed",
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("secondary") == nil {
+				if testutil.CredentialOrNil(opts, "secondary") == nil {
 					t.Error("expected secondary token to still exist after 5xx")
 				}
 			},
 		},
 		{
-			Name: "revoke by name default token reassigns",
+			Name: "revoke by name default token clears default",
 			Args: "revoke --name primary -y",
 			API:  &mock.API{DeleteTokenSelfFn: deleteTokenSelfOK},
 			ConfigFile: &config.File{
@@ -192,14 +192,14 @@ func TestAuthRevoke(t *testing.T) {
 					},
 				},
 			},
-			WantOutputs: []string{`Removed local token entry "primary"`, "Default token reassigned"},
+			WantOutputs: []string{`Removed local token entry "primary"`, "No default token configured"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.Auth.Default == "primary" {
+				if testutil.DefaultCredentialName(opts) == "primary" {
 					t.Error("expected default to no longer be primary")
 				}
-				if opts.Config.Auth.Default == "" {
-					t.Error("expected default to be reassigned")
+				if testutil.DefaultCredentialName(opts) != "" {
+					t.Errorf("expected default to be cleared (no implicit reassignment), got %q", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -266,13 +266,13 @@ func TestAuthRevoke(t *testing.T) {
 			Stdin: []string{"y"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("alias1") != nil {
+				if testutil.CredentialOrNil(opts, "alias1") != nil {
 					t.Error("expected alias1 to be removed")
 				}
-				if opts.Config.GetAuthToken("alias2") != nil {
+				if testutil.CredentialOrNil(opts, "alias2") != nil {
 					t.Error("expected alias2 to be removed")
 				}
-				if opts.Config.GetAuthToken("other") == nil {
+				if testutil.CredentialOrNil(opts, "other") == nil {
 					t.Error("expected other token to still exist")
 				}
 			},
@@ -346,7 +346,7 @@ func TestAuthRevoke(t *testing.T) {
 			DontWantOutput: "Removed",
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("stored") == nil {
+				if testutil.CredentialOrNil(opts, "stored") == nil {
 					t.Error("expected token to still exist after 401 on --id path")
 				}
 			},
@@ -366,7 +366,7 @@ func TestAuthRevoke(t *testing.T) {
 			WantOutputs: []string{"Revoked token 'id-legacy'", "local cleanup skipped"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("legacy") == nil {
+				if testutil.CredentialOrNil(opts, "legacy") == nil {
 					t.Error("expected legacy token to still exist (no APITokenID)")
 				}
 			},
@@ -390,13 +390,13 @@ func TestAuthRevoke(t *testing.T) {
 			WantOutputs: []string{"Revoked 2 token(s)", "Removed local token entry"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.GetAuthToken("tok1") != nil {
+				if testutil.CredentialOrNil(opts, "tok1") != nil {
 					t.Error("expected tok1 to be removed")
 				}
-				if opts.Config.GetAuthToken("tok2") != nil {
+				if testutil.CredentialOrNil(opts, "tok2") != nil {
 					t.Error("expected tok2 to be removed")
 				}
-				if opts.Config.GetAuthToken("other") == nil {
+				if testutil.CredentialOrNil(opts, "other") == nil {
 					t.Error("expected other to still exist")
 				}
 			},

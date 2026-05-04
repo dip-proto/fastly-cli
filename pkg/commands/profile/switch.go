@@ -1,12 +1,13 @@
 package profile
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/fastly/cli/pkg/argparser"
 	authcmd "github.com/fastly/cli/pkg/commands/auth"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -34,7 +35,10 @@ func (c *SwitchCommand) Exec(in io.Reader, out io.Writer) error {
 		text.Deprecated(out, "This command will be removed in a future release. Use 'fastly auth use' instead.\n\n")
 	}
 
-	at := c.Globals.Config.GetAuthToken(c.profile)
+	at, err := credentials.Lookup(c.Globals.Credentials, c.profile)
+	if err != nil {
+		return fmt.Errorf("loading credential %q: %w", c.profile, err)
+	}
 	if at == nil {
 		err := fmt.Errorf("the profile '%s' does not exist", c.profile)
 		c.Globals.ErrLog.Add(err)
@@ -44,31 +48,29 @@ func (c *SwitchCommand) Exec(in io.Reader, out io.Writer) error {
 		}
 	}
 
-	if at.Type == config.AuthTokenTypeSSO {
+	if at.Type == credentials.TypeSSO {
 		if err := authcmd.RunSSOWithTokenName(in, out, c.Globals, false, false, c.profile); err != nil {
 			return fmt.Errorf("failed to authenticate: %w", err)
 		}
-		if err := c.Globals.Config.SetDefaultAuthToken(c.profile); err != nil {
+		if err := c.Globals.Credentials.SetDefault(c.profile); err != nil {
 			return err
-		}
-		if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-			return fmt.Errorf("error saving config file: %w", err)
 		}
 		text.Success(out, "\nProfile switched to '%s'", c.profile)
 		return nil
 	}
 
-	if err := c.Globals.Config.SetDefaultAuthToken(c.profile); err != nil {
+	if err := c.Globals.Credentials.SetDefault(c.profile); err != nil {
 		c.Globals.ErrLog.Add(err)
+		if errors.Is(err, credentials.ErrNotFound) {
+			return fsterr.RemediationError{
+				Inner:       fmt.Errorf("the profile '%s' does not exist", c.profile),
+				Remediation: fsterr.ProfileRemediation(),
+			}
+		}
 		return fsterr.RemediationError{
 			Inner:       err,
 			Remediation: fsterr.ProfileRemediation(),
 		}
-	}
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-		c.Globals.ErrLog.Add(err)
-		return fmt.Errorf("error saving config file: %w", err)
 	}
 
 	if c.Globals.Verbose() {
