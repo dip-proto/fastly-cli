@@ -123,7 +123,7 @@ func TestSSO(t *testing.T) {
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				const expectedToken = "123"
-				at := opts.Config.GetAuthToken("test_user")
+				at := testutil.CredentialOrNil(opts, "test_user")
 				if at == nil {
 					t.Fatal("expected auth token 'test_user' to exist")
 				}
@@ -173,7 +173,7 @@ func TestSSO(t *testing.T) {
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				const expectedToken = "mock-token"
-				at := opts.Config.GetAuthToken("user")
+				at := testutil.CredentialOrNil(opts, "user")
 				if at == nil {
 					t.Fatal("expected auth token 'user' to exist")
 				}
@@ -271,135 +271,12 @@ func TestSSO(t *testing.T) {
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				const expectedToken = "new-123"
-				at := opts.Config.GetAuthToken("user")
+				at := testutil.CredentialOrNil(opts, "user")
 				if at == nil {
 					t.Fatal("expected auth token 'user' to exist")
 				}
 				if at.Token != expectedToken {
 					t.Errorf("want token: %s, got token: %s", expectedToken, at.Token)
-				}
-			},
-		},
-		// 9. Migration before token resolution: legacy profiles are migrated to
-		// [auth] before processToken() runs, so the token resolves correctly.
-		{
-			Args: "pops",
-			API: &mock.API{
-				AllDatacentersFn: func(_ context.Context) ([]fastly.Datacenter, error) {
-					return []fastly.Datacenter{
-						{
-							Name:   fastly.ToPointer("Foobar"),
-							Code:   fastly.ToPointer("FBR"),
-							Group:  fastly.ToPointer("Bar"),
-							Shield: fastly.ToPointer("Baz"),
-							Coordinates: &fastly.Coordinates{
-								Latitude:  fastly.ToPointer(float64(1)),
-								Longitude: fastly.ToPointer(float64(2)),
-								X:         fastly.ToPointer(float64(3)),
-								Y:         fastly.ToPointer(float64(4)),
-							},
-						},
-					}, nil
-				},
-			},
-			ConfigFile: &config.File{
-				Profiles: config.Profiles{
-					"legacy": &config.Profile{
-						Default: true,
-						Email:   "legacy@example.com",
-						Token:   "legacy-token",
-					},
-				},
-			},
-			Setup: func(_ *testing.T, _ *testutil.CLIScenario, opts *global.Data) {
-				opts.HTTPClient = testutil.CurrentCustomerClient(testutil.CurrentCustomerResponse)
-			},
-			WantOutputs: []string{
-				"{Latitude:1 Longitude:2 X:3 Y:4}",
-			},
-			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("legacy")
-				if at == nil {
-					t.Fatal("expected migrated auth token 'legacy' to exist")
-				}
-				if at.Token != "legacy-token" {
-					t.Errorf("want token: legacy-token, got token: %s", at.Token)
-				}
-				if opts.Config.Auth.Default != "legacy" {
-					t.Errorf("want default auth: legacy, got: %s", opts.Config.Auth.Default)
-				}
-			},
-		},
-		// 10. Mixed config: both [auth] and [profile] present.
-		// Profile-only entries must be merged into [auth], not dropped.
-		{
-			Args: "pops",
-			API: &mock.API{
-				AllDatacentersFn: func(_ context.Context) ([]fastly.Datacenter, error) {
-					return []fastly.Datacenter{
-						{
-							Name:   fastly.ToPointer("Foobar"),
-							Code:   fastly.ToPointer("FBR"),
-							Group:  fastly.ToPointer("Bar"),
-							Shield: fastly.ToPointer("Baz"),
-							Coordinates: &fastly.Coordinates{
-								Latitude:  fastly.ToPointer(float64(1)),
-								Longitude: fastly.ToPointer(float64(2)),
-								X:         fastly.ToPointer(float64(3)),
-								Y:         fastly.ToPointer(float64(4)),
-							},
-						},
-					}, nil
-				},
-			},
-			ConfigFile: &config.File{
-				Profiles: config.Profiles{
-					"profile-only": &config.Profile{
-						Email: "profile@example.com",
-						Token: "profile-token",
-					},
-				},
-				Auth: config.Auth{
-					Default: "existing",
-					Tokens: config.AuthTokens{
-						"existing": &config.AuthToken{
-							Type:  config.AuthTokenTypeStatic,
-							Token: "existing-token",
-							Email: "existing@example.com",
-						},
-					},
-				},
-			},
-			Setup: func(_ *testing.T, _ *testutil.CLIScenario, opts *global.Data) {
-				opts.HTTPClient = testutil.CurrentCustomerClient(testutil.CurrentCustomerResponse)
-			},
-			WantOutputs: []string{
-				"{Latitude:1 Longitude:2 X:3 Y:4}",
-			},
-			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				// The existing auth token must be preserved.
-				at := opts.Config.GetAuthToken("existing")
-				if at == nil {
-					t.Fatal("expected 'existing' auth token to be preserved")
-				}
-				if at.Token != "existing-token" {
-					t.Errorf("want token: existing-token, got: %s", at.Token)
-				}
-				// The profile-only entry must be merged in.
-				merged := opts.Config.GetAuthToken("profile-only")
-				if merged == nil {
-					t.Fatal("expected 'profile-only' profile to be merged into auth tokens")
-				}
-				if merged.Token != "profile-token" {
-					t.Errorf("want token: profile-token, got: %s", merged.Token)
-				}
-				// Default must remain unchanged.
-				if opts.Config.Auth.Default != "existing" {
-					t.Errorf("want default: existing, got: %s", opts.Config.Auth.Default)
-				}
-				// Profiles must be cleared.
-				if len(opts.Config.Profiles) > 0 {
-					t.Errorf("expected Profiles to be cleared, got %d entries", len(opts.Config.Profiles))
 				}
 			},
 		},
@@ -438,15 +315,15 @@ func TestSSO(t *testing.T) {
 				"Token saved to",
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("brandnew")
+				at := testutil.CredentialOrNil(opts, "brandnew")
 				if at == nil {
 					t.Fatal("expected auth token 'brandnew' to exist")
 				}
 				if at.Token != "brand-new-token" {
 					t.Errorf("want token: brand-new-token, got token: %s", at.Token)
 				}
-				if opts.Config.Auth.Default != "brandnew" {
-					t.Errorf("want default auth: brandnew, got: %s", opts.Config.Auth.Default)
+				if testutil.DefaultCredentialName(opts) != "brandnew" {
+					t.Errorf("want default auth: brandnew, got: %s", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -487,7 +364,7 @@ func TestSSO(t *testing.T) {
 				opts.HTTPClient = testutil.CurrentCustomerClient(testutil.CurrentCustomerResponse)
 			},
 			WantOutputs: []string{
-				`profile "nonexistent" not found in auth config, using default token "user"`,
+				`profile "nonexistent" not found in stored credentials, using default token "user"`,
 				"{Latitude:1 Longitude:2 X:3 Y:4}",
 			},
 		},
@@ -527,7 +404,7 @@ func TestSSO(t *testing.T) {
 				opts.Manifest.File.Profile = "nonexistent"
 				opts.HTTPClient = testutil.CurrentCustomerClient(testutil.CurrentCustomerResponse)
 			},
-			DontWantOutput: "not found in auth config",
+			DontWantOutput: "not found in stored credentials",
 		},
 		// 14. Missing manifest profile warning suppressed when --token overrides.
 		{
@@ -565,7 +442,7 @@ func TestSSO(t *testing.T) {
 				opts.Manifest.File.Profile = "nonexistent"
 				opts.HTTPClient = testutil.CurrentCustomerClient(testutil.CurrentCustomerResponse)
 			},
-			DontWantOutput: "not found in auth config",
+			DontWantOutput: "not found in stored credentials",
 		},
 		// 15. Auto-prompt: directly prompts for a static API token.
 		{
@@ -595,7 +472,7 @@ func TestSSO(t *testing.T) {
 			},
 			DontWantOutput: "Log in with browser",
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("my-api-token")
+				at := testutil.CredentialOrNil(opts, "my-api-token")
 				if at == nil {
 					t.Fatal("expected auth token 'my-api-token' to exist")
 				}
@@ -605,8 +482,8 @@ func TestSSO(t *testing.T) {
 				if at.Type != config.AuthTokenTypeStatic {
 					t.Errorf("want type: static, got type: %s", at.Type)
 				}
-				if opts.Config.Auth.Default != "my-api-token" {
-					t.Errorf("want Auth.Default my-api-token, got %s", opts.Config.Auth.Default)
+				if testutil.DefaultCredentialName(opts) != "my-api-token" {
+					t.Errorf("want Auth.Default my-api-token, got %s", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -684,7 +561,7 @@ func TestSSO(t *testing.T) {
 			},
 			DontWantOutput: "Paste your API token",
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("default")
+				at := testutil.CredentialOrNil(opts, "default")
 				if at == nil {
 					t.Fatal("expected auth token 'default' to exist")
 				}
@@ -767,7 +644,7 @@ func TestSSO(t *testing.T) {
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
 				// SSO token was created
-				ssoAt := opts.Config.GetAuthToken("work-sso")
+				ssoAt := testutil.CredentialOrNil(opts, "work-sso")
 				if ssoAt == nil {
 					t.Fatal("expected auth token 'work-sso' to exist")
 				}
@@ -775,7 +652,7 @@ func TestSSO(t *testing.T) {
 					t.Errorf("want sso token: sso-new-token, got: %s", ssoAt.Token)
 				}
 				// Static token is untouched
-				staticAt := opts.Config.GetAuthToken("mytoken")
+				staticAt := testutil.CredentialOrNil(opts, "mytoken")
 				if staticAt == nil {
 					t.Fatal("expected auth token 'mytoken' to still exist")
 				}
@@ -783,8 +660,8 @@ func TestSSO(t *testing.T) {
 					t.Errorf("want static token: static-secret, got: %s", staticAt.Token)
 				}
 				// Default switched to the SSO token (login always sets default)
-				if opts.Config.Auth.Default != "work-sso" {
-					t.Errorf("want default: work-sso, got: %s", opts.Config.Auth.Default)
+				if testutil.DefaultCredentialName(opts) != "work-sso" {
+					t.Errorf("want default: work-sso, got: %s", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -821,7 +698,7 @@ func TestSSO(t *testing.T) {
 			WantOutputs: []string{"has been stored", "Token saved to"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				at := opts.Config.GetAuthToken("sso-meta")
+				at := testutil.CredentialOrNil(opts, "sso-meta")
 				if at == nil {
 					t.Fatal("expected auth token 'sso-meta' to exist")
 				}

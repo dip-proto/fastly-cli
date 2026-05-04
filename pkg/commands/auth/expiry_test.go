@@ -6,7 +6,7 @@ import (
 	"time"
 
 	authcmd "github.com/fastly/cli/pkg/commands/auth"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 )
 
 func TestGetExpirationStatus(t *testing.T) {
@@ -14,22 +14,20 @@ func TestGetExpirationStatus(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		token      *config.AuthToken
+		token      *credentials.Metadata
 		wantStatus authcmd.ExpirationStatus
 		wantErr    bool
 	}{
-		// Nil token.
 		{
 			name:       "nil token",
 			token:      nil,
 			wantStatus: authcmd.StatusNoExpiry,
 		},
 
-		// NeedsReauth precedence.
 		{
 			name: "needs reauth takes precedence over valid expiry",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
 				NeedsReauth:      true,
 				RefreshExpiresAt: now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
 			},
@@ -37,173 +35,151 @@ func TestGetExpirationStatus(t *testing.T) {
 		},
 		{
 			name: "needs reauth takes precedence over expired",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
 				NeedsReauth:      true,
 				RefreshExpiresAt: now.Add(-1 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusNeedsReauth,
 		},
 
-		// Static tokens.
 		{
 			name: "static no expiry",
-			token: &config.AuthToken{
-				Type: config.AuthTokenTypeStatic,
+			token: &credentials.Metadata{
+				Type: credentials.TypeStatic,
 			},
 			wantStatus: authcmd.StatusNoExpiry,
 		},
 		{
 			name: "static future expiry OK",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeStatic,
+			token: &credentials.Metadata{
+				Type:              credentials.TypeStatic,
 				APITokenExpiresAt: now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusOK,
 		},
 		{
 			name: "static not expiring soon (3 days out)",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeStatic,
+			token: &credentials.Metadata{
+				Type:              credentials.TypeStatic,
 				APITokenExpiresAt: now.Add(3 * 24 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusOK,
 		},
 		{
 			name: "static expiring soon (within 30 minutes)",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeStatic,
+			token: &credentials.Metadata{
+				Type:              credentials.TypeStatic,
 				APITokenExpiresAt: now.Add(20 * time.Minute).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpiringSoon,
 		},
 		{
 			name: "static expiring soon (exactly 30 minutes)",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeStatic,
+			token: &credentials.Metadata{
+				Type:              credentials.TypeStatic,
 				APITokenExpiresAt: now.Add(30 * time.Minute).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpiringSoon,
 		},
 		{
 			name: "static expired",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeStatic,
+			token: &credentials.Metadata{
+				Type:              credentials.TypeStatic,
 				APITokenExpiresAt: now.Add(-2 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpired,
 		},
 		{
 			name: "static malformed expiry",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeStatic,
+			token: &credentials.Metadata{
+				Type:              credentials.TypeStatic,
 				APITokenExpiresAt: "not-a-date",
 			},
 			wantStatus: authcmd.StatusNoExpiry,
 			wantErr:    true,
 		},
 
-		// SSO tokens: RefreshExpiresAt primary.
-		{
-			name: "sso api_token_expires_at preferred over refresh",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeSSO,
-				APITokenExpiresAt: now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
-				RefreshExpiresAt:  now.Add(25 * time.Minute).Format(time.RFC3339),
-			},
-			wantStatus: authcmd.StatusOK,
-		},
-		{
-			name: "sso api_token_expires_at not expiring soon (3 days out)",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeSSO,
-				APITokenExpiresAt: now.Add(3 * 24 * time.Hour).Format(time.RFC3339),
-				RefreshExpiresAt:  now.Add(25 * time.Minute).Format(time.RFC3339),
-			},
-			wantStatus: authcmd.StatusOK,
-		},
-		{
-			name: "sso api_token_expires_at expiring soon (within 30 minutes)",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeSSO,
-				APITokenExpiresAt: now.Add(15 * time.Minute).Format(time.RFC3339),
-				RefreshExpiresAt:  now.Add(25 * time.Minute).Format(time.RFC3339),
-			},
-			wantStatus: authcmd.StatusExpiringSoon,
-		},
-		{
-			name: "sso api_token_expires_at expired",
-			token: &config.AuthToken{
-				Type:              config.AuthTokenTypeSSO,
-				APITokenExpiresAt: now.Add(-1 * time.Hour).Format(time.RFC3339),
-				RefreshExpiresAt:  now.Add(-2 * time.Hour).Format(time.RFC3339),
-			},
-			wantStatus: authcmd.StatusExpired,
-		},
 		{
 			name: "sso refresh OK",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				RefreshExpiresAt: now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusOK,
 		},
 		{
 			name: "sso refresh not expiring soon (3 days out)",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				RefreshExpiresAt: now.Add(3 * 24 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusOK,
 		},
 		{
 			name: "sso refresh expiring soon (within 30 minutes)",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				RefreshExpiresAt: now.Add(20 * time.Minute).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpiringSoon,
 		},
 		{
 			name: "sso refresh expired",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				RefreshExpiresAt: now.Add(-1 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpired,
 		},
 
-		// SSO tokens: AccessExpiresAt fallback.
+		// HasRefreshToken set but RefreshExpiresAt empty means refresh
+		// metadata is not yet populated; do not warn on access expiry.
+		{
+			name: "sso has refresh token but no refresh expiry, access expired",
+			token: &credentials.Metadata{
+				Type:            credentials.TypeSSO,
+				HasRefreshToken: true,
+				AccessExpiresAt: now.Add(-1 * time.Hour).Format(time.RFC3339),
+			},
+			wantStatus: authcmd.StatusNoExpiry,
+		},
+
+		// SSO with no refresh token falls back to AccessExpiresAt.
 		{
 			name: "sso no refresh, access OK (beyond 1h threshold)",
-			token: &config.AuthToken{
-				Type:            config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:            credentials.TypeSSO,
 				AccessExpiresAt: now.Add(2 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusOK,
 		},
 		{
 			name: "sso no refresh, access expiring soon (within 1h)",
-			token: &config.AuthToken{
-				Type:            config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:            credentials.TypeSSO,
 				AccessExpiresAt: now.Add(30 * time.Minute).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpiringSoon,
 		},
 		{
 			name: "sso no refresh, access expired",
-			token: &config.AuthToken{
-				Type:            config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:            credentials.TypeSSO,
 				AccessExpiresAt: now.Add(-10 * time.Minute).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpired,
 		},
 
-		// SSO tokens: malformed timestamps.
 		{
 			name: "sso malformed refresh, valid access fallback",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				RefreshExpiresAt: "garbage",
 				AccessExpiresAt:  now.Add(2 * time.Hour).Format(time.RFC3339),
 			},
@@ -211,17 +187,17 @@ func TestGetExpirationStatus(t *testing.T) {
 		},
 		{
 			name: "sso malformed refresh, no access",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				RefreshExpiresAt: "garbage",
 			},
 			wantStatus: authcmd.StatusNoExpiry,
-			wantErr:    false,
 		},
 		{
 			name: "sso no refresh, malformed access",
-			token: &config.AuthToken{
-				Type:            config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:            credentials.TypeSSO,
 				AccessExpiresAt: "garbage",
 			},
 			wantStatus: authcmd.StatusNoExpiry,
@@ -229,8 +205,9 @@ func TestGetExpirationStatus(t *testing.T) {
 		},
 		{
 			name: "sso both malformed",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				RefreshExpiresAt: "bad1",
 				AccessExpiresAt:  "bad2",
 			},
@@ -239,16 +216,15 @@ func TestGetExpirationStatus(t *testing.T) {
 		},
 		{
 			name: "sso no expiry fields at all",
-			token: &config.AuthToken{
-				Type: config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type: credentials.TypeSSO,
 			},
 			wantStatus: authcmd.StatusNoExpiry,
 		},
 
-		// Unknown type falls through to static-style check.
 		{
 			name: "unknown type with expiry (not soon)",
-			token: &config.AuthToken{
+			token: &credentials.Metadata{
 				Type:              "unknown",
 				APITokenExpiresAt: now.Add(3 * 24 * time.Hour).Format(time.RFC3339),
 			},
@@ -256,7 +232,7 @@ func TestGetExpirationStatus(t *testing.T) {
 		},
 		{
 			name: "unknown type with expiry (within 30 minutes)",
-			token: &config.AuthToken{
+			token: &credentials.Metadata{
 				Type:              "unknown",
 				APITokenExpiresAt: now.Add(10 * time.Minute).Format(time.RFC3339),
 			},
@@ -268,18 +244,11 @@ func TestGetExpirationStatus(t *testing.T) {
 		// ExpirationStatus must not return StatusOK.
 		{
 			name: "consistency: both expired yields StatusExpired not StatusOK",
-			token: &config.AuthToken{
-				Type:             config.AuthTokenTypeSSO,
+			token: &credentials.Metadata{
+				Type:             credentials.TypeSSO,
+				HasRefreshToken:  true,
 				AccessExpiresAt:  now.Add(-2 * time.Hour).Format(time.RFC3339),
 				RefreshExpiresAt: now.Add(-1 * time.Hour).Format(time.RFC3339),
-			},
-			wantStatus: authcmd.StatusExpired,
-		},
-		{
-			name: "consistency: access expired, no refresh yields StatusExpired",
-			token: &config.AuthToken{
-				Type:            config.AuthTokenTypeSSO,
-				AccessExpiresAt: now.Add(-2 * time.Hour).Format(time.RFC3339),
 			},
 			wantStatus: authcmd.StatusExpired,
 		},
@@ -360,7 +329,6 @@ func TestExpirationSummary(t *testing.T) {
 }
 
 func TestExpirationRemediation(t *testing.T) {
-	// Ensure we test in a clean env state.
 	originalEnv := os.Getenv("FASTLY_DISABLE_AUTH_COMMAND")
 	defer os.Setenv("FASTLY_DISABLE_AUTH_COMMAND", originalEnv)
 

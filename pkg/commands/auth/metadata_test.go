@@ -10,6 +10,7 @@ import (
 
 	authcmd "github.com/fastly/cli/pkg/commands/auth"
 	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/mock"
 	"github.com/fastly/cli/pkg/testutil"
@@ -60,7 +61,7 @@ func TestAuthAdd(t *testing.T) {
 			WantOutputs: []string{`Token "mytoken" added`, "Token saved to"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				at := opts.Config.GetAuthToken("mytoken")
+				at := testutil.CredentialOrNil(opts, "mytoken")
 				if at == nil {
 					t.Fatal("expected auth token 'mytoken' to exist")
 				}
@@ -91,7 +92,7 @@ func TestAuthAdd(t *testing.T) {
 			WantOutputs: []string{`Token "my-api-token" added`, "Token saved to"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				at := opts.Config.GetAuthToken("my-api-token")
+				at := testutil.CredentialOrNil(opts, "my-api-token")
 				if at == nil {
 					t.Fatal("expected auth token 'my-api-token' to exist")
 				}
@@ -119,7 +120,7 @@ func TestAuthAdd(t *testing.T) {
 			WantOutputs: []string{`Token "expiring" added`, "Token saved to"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				at := opts.Config.GetAuthToken("expiring")
+				at := testutil.CredentialOrNil(opts, "expiring")
 				if at == nil {
 					t.Fatal("expected auth token to exist")
 				}
@@ -141,8 +142,8 @@ func TestAuthAdd(t *testing.T) {
 			WantOutputs: []string{`Token "first-token" added`, "set as default"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.Auth.Default != "first-token" {
-					t.Errorf("want Auth.Default first-token, got %s", opts.Config.Auth.Default)
+				if testutil.DefaultCredentialName(opts) != "first-token" {
+					t.Errorf("want Auth.Default first-token, got %s", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -186,7 +187,7 @@ func TestAuthLogin(t *testing.T) {
 			WantOutputs: []string{`Authenticated as alice@example.com (token stored as "my-api-token")`, "Token saved to"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				at := opts.Config.GetAuthToken("my-api-token")
+				at := testutil.CredentialOrNil(opts, "my-api-token")
 				if at == nil {
 					t.Fatal("expected auth token 'my-api-token' to exist")
 				}
@@ -202,8 +203,8 @@ func TestAuthLogin(t *testing.T) {
 				if at.Email != "alice@example.com" {
 					t.Errorf("want email alice@example.com, got %s", at.Email)
 				}
-				if opts.Config.Auth.Default != "my-api-token" {
-					t.Errorf("want Auth.Default my-api-token, got %s", opts.Config.Auth.Default)
+				if testutil.DefaultCredentialName(opts) != "my-api-token" {
+					t.Errorf("want Auth.Default my-api-token, got %s", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -220,12 +221,12 @@ func TestAuthLogin(t *testing.T) {
 			WantOutputs: []string{`Authenticated as alice@example.com (token stored as "default")`, "Token saved to"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				at := opts.Config.GetAuthToken("default")
+				at := testutil.CredentialOrNil(opts, "default")
 				if at == nil {
 					t.Fatal("expected auth token 'default' to exist")
 				}
-				if opts.Config.Auth.Default != "default" {
-					t.Errorf("want Auth.Default default, got %s", opts.Config.Auth.Default)
+				if testutil.DefaultCredentialName(opts) != "default" {
+					t.Errorf("want Auth.Default default, got %s", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -366,7 +367,7 @@ func TestAuthAddScopedToken(t *testing.T) {
 			WantOutputs: []string{`Token "purge-token" added`, "Token saved to"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				at := opts.Config.GetAuthToken("purge-token")
+				at := testutil.CredentialOrNil(opts, "purge-token")
 				if at == nil {
 					t.Fatal("expected auth token 'purge-token' to exist")
 				}
@@ -423,7 +424,7 @@ func TestEnrichWithTokenSelfPreservesOnFailure(t *testing.T) {
 		},
 	})
 
-	at := &config.AuthToken{
+	at := &credentials.Token{
 		Token:             "existing-token",
 		APITokenName:      "original-name",
 		APITokenScope:     "global",
@@ -477,14 +478,14 @@ func TestAuthDelete(t *testing.T) {
 				},
 			},
 			Stdin:       []string{"y"},
-			WantOutputs: []string{"current default token", "FASTLY_API_TOKEN", "Are you sure", `Token "primary" removed`, "Default token reassigned"},
+			WantOutputs: []string{"current default token", "FASTLY_API_TOKEN", "Are you sure", `Token "primary" removed`, "No default token configured"},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.Auth.Default == "primary" {
+				if testutil.DefaultCredentialName(opts) == "primary" {
 					t.Error("expected default to no longer be the deleted token")
 				}
-				if opts.Config.Auth.Default == "" {
-					t.Error("expected default to be reassigned to remaining token")
+				if testutil.DefaultCredentialName(opts) != "" {
+					t.Errorf("expected default to be cleared (no implicit reassignment), got %q", testutil.DefaultCredentialName(opts))
 				}
 			},
 		},
@@ -504,10 +505,10 @@ func TestAuthDelete(t *testing.T) {
 			DontWantOutput: "removed",
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
 				t.Helper()
-				if opts.Config.Auth.Default != "primary" {
+				if testutil.DefaultCredentialName(opts) != "primary" {
 					t.Error("expected default to remain unchanged after user declined")
 				}
-				if opts.Config.GetAuthToken("primary") == nil {
+				if testutil.CredentialOrNil(opts, "primary") == nil {
 					t.Error("expected token to still exist after user declined")
 				}
 			},
@@ -556,7 +557,7 @@ func TestAuthDelete(t *testing.T) {
 				},
 			},
 			DontWantOutput: "Are you sure",
-			WantOutputs:    []string{`Token "primary" removed`, "Default token reassigned"},
+			WantOutputs:    []string{`Token "primary" removed`, "No default token configured"},
 		},
 		{
 			Name: "delete default token skips prompt with --non-interactive",
@@ -571,7 +572,7 @@ func TestAuthDelete(t *testing.T) {
 				},
 			},
 			DontWantOutput: "Are you sure",
-			WantOutputs:    []string{`Token "primary" removed`, "Default token reassigned"},
+			WantOutputs:    []string{`Token "primary" removed`, "No default token configured"},
 		},
 	}
 

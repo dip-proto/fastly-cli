@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fastly/cli/pkg/argparser"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
 )
@@ -23,17 +24,25 @@ func NewListCommand(parent argparser.Registerer, g *global.Data) *ListCommand {
 }
 
 func (c *ListCommand) Exec(_ io.Reader, out io.Writer) error {
-	tokens := c.Globals.Config.Auth.Tokens
+	tokens, err := credentials.AllMetadata(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("listing credentials: %w", err)
+	}
 	if len(tokens) == 0 {
 		text.Output(out, "No tokens stored. Run `fastly auth login` to add one.\n")
 		return nil
+	}
+
+	defaultName, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
 	}
 
 	now := time.Now()
 
 	for name, entry := range tokens {
 		marker := "  "
-		if name == c.Globals.Config.Auth.Default {
+		if name == defaultName {
 			marker = "* "
 		}
 

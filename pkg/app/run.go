@@ -29,6 +29,7 @@ import (
 	"github.com/fastly/cli/pkg/commands/update"
 	"github.com/fastly/cli/pkg/commands/version"
 	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/env"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/github"
@@ -89,6 +90,21 @@ var Init = func(args []string, stdin io.Reader) (*global.Data, error) {
 		}
 		if seg == "-i" || seg == "--non-interactive" {
 			nonInteractive = true
+		}
+	}
+
+	// Run the legacy-config migration only when credentials.toml is
+	// absent, so the steady-state path skips the legacy-config parse.
+	credStore := credentials.NewFileStore(credentials.FilePath)
+	if _, statErr := os.Stat(credentials.FilePath); errors.Is(statErr, os.ErrNotExist) {
+		migrated, err := credentials.Migrate(config.FilePath, credStore)
+		if err != nil {
+			return nil, fmt.Errorf("migrating credentials: %w", err)
+		}
+		if migrated {
+			fmt.Fprintf(os.Stderr,
+				"Credentials moved to %s. The CLI no longer reads or writes [auth]/[profile]/[user] sections of config.toml; you can remove them by hand.\n",
+				credentials.FilePath)
 		}
 	}
 
@@ -170,6 +186,8 @@ var Init = func(args []string, stdin io.Reader) (*global.Data, error) {
 		Args:             args,
 		Config:           cfg,
 		ConfigPath:       config.FilePath,
+		Credentials:      credStore,
+		CredentialsPath:  credentials.FilePath,
 		Env:              e,
 		ErrLog:           fsterr.Log,
 		ErrOutput:        os.Stderr,
@@ -239,16 +257,6 @@ func Exec(data *global.Data) error {
 		data.Manifest.File.SetQuiet(true)
 	}
 
-	// Migrate legacy profiles to [auth] section.
-	// MigrateProfilesToAuth merges without overwriting existing auth entries.
-	if len(data.Config.Profiles) > 0 {
-		data.Config.MigrateProfilesToAuth()
-		data.Config.Profiles = nil
-		if err := data.Config.Write(data.ConfigPath); err != nil {
-			data.ErrLog.Add(err)
-		}
-	}
-
 	apiEndpoint, endpointSource := data.APIEndpoint()
 	if data.Verbose() && !commandSuppressesVerbose(command) {
 		displayAPIEndpoint(apiEndpoint, endpointSource, data.Output)
@@ -290,11 +298,11 @@ func Exec(data *global.Data) error {
 		}
 
 		if !data.Flags.Quiet && data.Flags.Token == "" && data.Env.APIToken == "" && data.Manifest != nil && data.Manifest.File.Profile != "" {
-			if data.Config.GetAuthToken(data.Manifest.File.Profile) == nil {
-				if defaultName, _ := data.Config.GetDefaultAuthToken(); defaultName != "" {
-					text.Warning(data.ErrOutput, "fastly.toml profile %q not found in auth config, using default token %q.\n", data.Manifest.File.Profile, defaultName)
+			if _, err := data.Credentials.Metadata(data.Manifest.File.Profile); errors.Is(err, credentials.ErrNotFound) {
+				if defaultName, defErr := data.Credentials.DefaultName(); defErr == nil && defaultName != "" {
+					text.Warning(data.ErrOutput, "fastly.toml profile %q not found in stored credentials, using default token %q.\n", data.Manifest.File.Profile, defaultName)
 				} else {
-					text.Warning(data.ErrOutput, "fastly.toml profile %q not found in auth config and no default token is configured.\n", data.Manifest.File.Profile)
+					text.Warning(data.ErrOutput, "fastly.toml profile %q not found in stored credentials and no default token is configured.\n", data.Manifest.File.Profile)
 				}
 			}
 		}
@@ -413,8 +421,11 @@ func processToken(data *global.Data) (token string, tokenSource lookup.Source, e
 		if name == "" {
 			break
 		}
-		at := data.Config.GetAuthToken(name)
-		if at != nil && at.Type == config.AuthTokenTypeSSO && at.RefreshToken != "" {
+		at, err := credentials.Lookup(data.Credentials, name)
+		if err != nil {
+			return token, tokenSource, fmt.Errorf("loading credential %q: %w", name, err)
+		}
+		if at != nil && at.Type == credentials.TypeSSO && at.RefreshToken != "" {
 			reauth, err := checkAndRefreshAuthSSOToken(name, at, data)
 			if err != nil {
 				if errors.Is(err, auth.ErrInvalidGrant) {
@@ -434,8 +445,8 @@ func processToken(data *global.Data) (token string, tokenSource lookup.Source, e
 	return token, tokenSource, nil
 }
 
-// checkAndRefreshAuthSSOToken refreshes an SSO-type [auth] token if expired.
-func checkAndRefreshAuthSSOToken(name string, at *config.AuthToken, data *global.Data) (reauth bool, err error) {
+// checkAndRefreshAuthSSOToken refreshes an SSO credential if expired.
+func checkAndRefreshAuthSSOToken(name string, at *credentials.Token, data *global.Data) (reauth bool, err error) {
 	if at.AccessExpiresAt == "" {
 		return false, nil // no expiry info, assume still valid
 	}
@@ -506,10 +517,9 @@ func checkAndRefreshAuthSSOToken(name string, at *config.AuthToken, data *global
 
 	authcmd.EnrichWithTokenSelf(data, at)
 
-	data.Config.SetAuthToken(name, at)
-	if err := data.Config.Write(data.ConfigPath); err != nil {
+	if err := data.Credentials.Set(name, at); err != nil {
 		data.ErrLog.Add(err)
-		return false, fmt.Errorf("error saving config file: %w", err)
+		return false, fmt.Errorf("error saving refreshed credential: %w", err)
 	}
 
 	return false, nil
@@ -540,14 +550,20 @@ func checkTokenExpirationWarning(data *global.Data, commandName string) {
 
 	name := data.AuthTokenName()
 	if name == "" {
-		name = data.Config.Auth.Default
+		return
 	}
-	at := data.Config.GetAuthToken(name)
-	if at == nil {
+	md, err := credentials.LookupMetadata(data.Credentials, name)
+	if err != nil {
+		if data.ErrLog != nil {
+			data.ErrLog.Add(fmt.Errorf("expiry warning: load credential %q: %w", name, err))
+		}
+		return
+	}
+	if md == nil {
 		return
 	}
 
-	status, expires, err := authcmd.GetExpirationStatus(at, time.Now())
+	status, expires, err := authcmd.GetExpirationStatus(md, time.Now())
 	if err != nil && data.ErrLog != nil {
 		data.ErrLog.Add(err)
 	}
@@ -556,9 +572,9 @@ func checkTokenExpirationWarning(data *global.Data, commandName string) {
 	}
 
 	summary := authcmd.ExpirationSummary(status, expires, time.Now())
-	remediation := authcmd.ExpirationRemediation(at.Type)
+	remediation := authcmd.ExpirationRemediation(md.Type)
 	label := ""
-	if at.RefreshExpiresAt != "" {
+	if md.RefreshExpiresAt != "" {
 		label = "session "
 	}
 	text.Warning(data.ErrOutput, "Your active token %s%s. %s\n", label, summary, remediation)
@@ -640,7 +656,7 @@ func promptForAuth(data *global.Data) (string, lookup.Source, error) {
 	}
 
 	text.Success(data.Output, "Authenticated as %s (token stored as %q)", md.Email, name)
-	text.Info(data.Output, "Token saved to %s", data.ConfigPath)
+	text.Info(data.Output, "Token saved to %s", data.CredentialsPath)
 	return token, lookup.SourceAuth, nil
 }
 

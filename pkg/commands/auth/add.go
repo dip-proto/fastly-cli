@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/fastly/cli/pkg/argparser"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -30,10 +30,14 @@ func NewAddCommand(parent argparser.Registerer, g *global.Data) *AddCommand {
 }
 
 func (c *AddCommand) Exec(_ io.Reader, out io.Writer) error {
-	// Short-circuit: if an explicit name was provided and already exists,
-	// fail before making any network calls.
-	if c.name != "" && c.Globals.Config.GetAuthToken(c.name) != nil {
-		return fmt.Errorf("token %q already exists; use 'fastly auth delete %s' first", c.name, c.name)
+	if c.name != "" {
+		existing, err := credentials.Lookup(c.Globals.Credentials, c.name)
+		if err != nil {
+			return fmt.Errorf("loading credential %q: %w", c.name, err)
+		}
+		if existing != nil {
+			return fmt.Errorf("token %q already exists; use 'fastly auth delete %s' first", c.name, c.name)
+		}
 	}
 
 	md, err := FetchTokenMetadataLenient(c.Globals, c.token)
@@ -50,14 +54,17 @@ func (c *AddCommand) Exec(_ io.Reader, out io.Writer) error {
 			}
 		}
 		name = md.APITokenName
-		// Check collision for the derived name too.
-		if c.Globals.Config.GetAuthToken(name) != nil {
+		existing, err := credentials.Lookup(c.Globals.Credentials, name)
+		if err != nil {
+			return fmt.Errorf("loading credential %q: %w", name, err)
+		}
+		if existing != nil {
 			return fmt.Errorf("token %q already exists; use 'fastly auth delete %s' first", name, name)
 		}
 	}
 
-	entry := &config.AuthToken{
-		Type:              config.AuthTokenTypeStatic,
+	entry := &credentials.Token{
+		Type:              credentials.TypeStatic,
 		Token:             c.token,
 		Email:             md.Email,
 		AccountID:         md.AccountID,
@@ -67,23 +74,16 @@ func (c *AddCommand) Exec(_ io.Reader, out io.Writer) error {
 		APITokenID:        md.APITokenID,
 	}
 
-	c.Globals.Config.SetAuthToken(name, entry)
-
-	// When no default token is configured, automatically promote this token
-	// so CLI commands work without an explicit --token flag.
-	setDefault := c.Globals.Config.Auth.Default == ""
-	if setDefault {
-		c.Globals.Config.Auth.Default = name
+	previousDefault, err := credentials.SetAndPromote(c.Globals.Credentials, name, entry)
+	if err != nil {
+		return fmt.Errorf("storing credential %q: %w", name, err)
 	}
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-		return fmt.Errorf("error saving config: %w", err)
-	}
+	setDefault := previousDefault == ""
 
 	text.Success(out, "Token %q added", name)
 	if setDefault {
 		text.Info(out, "Token %q set as default (no previous default was configured)", name)
 	}
-	text.Info(out, "Token saved to %s", c.Globals.ConfigPath)
+	text.Info(out, "Token saved to %s", c.Globals.CredentialsPath)
 	return nil
 }

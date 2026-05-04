@@ -4,130 +4,98 @@ import (
 	"testing"
 
 	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/lookup"
 	"github.com/fastly/cli/pkg/manifest"
 	"github.com/fastly/cli/pkg/threadsafe"
 )
 
+func makeData(creds map[string]*credentials.Token, defaultName string) *global.Data {
+	s := credentials.NewMemoryStore()
+	for n, t := range creds {
+		_ = s.Set(n, t)
+	}
+	if defaultName != "" {
+		_ = s.SetDefault(defaultName)
+	}
+	return &global.Data{Credentials: s}
+}
+
 func TestToken(t *testing.T) {
 	tests := []struct {
 		name       string
-		data       *global.Data
+		mutate     func(*global.Data)
+		creds      map[string]*credentials.Token
+		defaultC   string
 		wantToken  string
 		wantSource lookup.Source
 	}{
 		{
 			name: "token flag matches stored auth token name",
-			data: &global.Data{
-				Flags: global.Flags{Token: "myname"},
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "myname",
-						Tokens: config.AuthTokens{
-							"myname": &config.AuthToken{
-								Type:  config.AuthTokenTypeStatic,
-								Token: "stored-token-value",
-							},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Flags.Token = "myname"
 			},
+			creds: map[string]*credentials.Token{
+				"myname": {Type: credentials.TypeStatic, Token: "stored-token-value"},
+			},
+			defaultC:   "myname",
 			wantToken:  "stored-token-value",
 			wantSource: lookup.SourceAuth,
 		},
 		{
 			name: "token flag raw value when no stored name matches",
-			data: &global.Data{
-				Flags: global.Flags{Token: "raw-api-token"},
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "user",
-						Tokens: config.AuthTokens{
-							"user": &config.AuthToken{
-								Type:  config.AuthTokenTypeStatic,
-								Token: "other-token",
-							},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Flags.Token = "raw-api-token"
 			},
+			creds: map[string]*credentials.Token{
+				"user": {Type: credentials.TypeStatic, Token: "other-token"},
+			},
+			defaultC:   "user",
 			wantToken:  "raw-api-token",
 			wantSource: lookup.SourceFlag,
 		},
 		{
 			name: "manifest profile selects stored auth token",
-			data: &global.Data{
-				Manifest: &manifest.Data{
-					File: manifest.File{Profile: "proj"},
-				},
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "default-user",
-						Tokens: config.AuthTokens{
-							"default-user": &config.AuthToken{
-								Type:  config.AuthTokenTypeStatic,
-								Token: "default-token",
-							},
-							"proj": &config.AuthToken{
-								Type:  config.AuthTokenTypeStatic,
-								Token: "project-token",
-							},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Manifest = &manifest.Data{File: manifest.File{Profile: "proj"}}
 			},
+			creds: map[string]*credentials.Token{
+				"default-user": {Type: credentials.TypeStatic, Token: "default-token"},
+				"proj":         {Type: credentials.TypeStatic, Token: "project-token"},
+			},
+			defaultC:   "default-user",
 			wantToken:  "project-token",
 			wantSource: lookup.SourceAuth,
 		},
 		{
 			name: "manifest profile falls through when no matching auth token",
-			data: &global.Data{
-				Manifest: &manifest.Data{
-					File: manifest.File{Profile: "missing"},
-				},
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "user",
-						Tokens: config.AuthTokens{
-							"user": &config.AuthToken{
-								Type:  config.AuthTokenTypeStatic,
-								Token: "default-token",
-							},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Manifest = &manifest.Data{File: manifest.File{Profile: "missing"}}
 			},
+			creds: map[string]*credentials.Token{
+				"user": {Type: credentials.TypeStatic, Token: "default-token"},
+			},
+			defaultC:   "user",
 			wantToken:  "default-token",
 			wantSource: lookup.SourceAuth,
 		},
 		{
 			name: "env var takes precedence over manifest profile",
-			data: &global.Data{
-				Env: config.Environment{APIToken: "env-token"},
-				Manifest: &manifest.Data{
-					File: manifest.File{Profile: "proj"},
-				},
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "user",
-						Tokens: config.AuthTokens{
-							"proj": &config.AuthToken{
-								Type:  config.AuthTokenTypeStatic,
-								Token: "project-token",
-							},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Env = config.Environment{APIToken: "env-token"}
+				d.Manifest = &manifest.Data{File: manifest.File{Profile: "proj"}}
 			},
+			creds: map[string]*credentials.Token{
+				"proj": {Type: credentials.TypeStatic, Token: "project-token"},
+			},
+			defaultC:   "user",
 			wantToken:  "env-token",
 			wantSource: lookup.SourceEnvironment,
 		},
 		{
-			name: "no token sources returns undefined",
-			data: &global.Data{
-				Config: config.File{},
-			},
+			name:       "no token sources returns undefined",
+			creds:      nil,
 			wantToken:  "",
 			wantSource: lookup.SourceUndefined,
 		},
@@ -135,7 +103,11 @@ func TestToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotToken, gotSource := tt.data.Token()
+			d := makeData(tt.creds, tt.defaultC)
+			if tt.mutate != nil {
+				tt.mutate(d)
+			}
+			gotToken, gotSource := d.Token()
 			if gotToken != tt.wantToken {
 				t.Errorf("Token() token = %q, want %q", gotToken, tt.wantToken)
 			}
@@ -149,91 +121,63 @@ func TestToken(t *testing.T) {
 func TestAuthTokenName(t *testing.T) {
 	tests := []struct {
 		name     string
-		data     *global.Data
+		mutate   func(*global.Data)
+		creds    map[string]*credentials.Token
+		defaultC string
 		wantName string
 	}{
 		{
 			name: "token flag matches stored name",
-			data: &global.Data{
-				Flags: global.Flags{Token: "myname"},
-				Config: config.File{
-					Auth: config.Auth{
-						Tokens: config.AuthTokens{
-							"myname": &config.AuthToken{Token: "t"},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Flags.Token = "myname"
 			},
+			creds:    map[string]*credentials.Token{"myname": {Token: "t"}},
 			wantName: "myname",
 		},
 		{
 			name: "token flag raw value returns empty",
-			data: &global.Data{
-				Flags: global.Flags{Token: "raw-value"},
-				Config: config.File{
-					Auth: config.Auth{
-						Tokens: config.AuthTokens{
-							"user": &config.AuthToken{Token: "t"},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Flags.Token = "raw-value"
 			},
+			creds:    map[string]*credentials.Token{"user": {Token: "t"}},
 			wantName: "",
 		},
 		{
 			name: "manifest profile returns profile name",
-			data: &global.Data{
-				Manifest: &manifest.Data{
-					File: manifest.File{Profile: "proj"},
-				},
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "default-user",
-						Tokens: config.AuthTokens{
-							"default-user": &config.AuthToken{Token: "t"},
-							"proj":         &config.AuthToken{Token: "t2"},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Manifest = &manifest.Data{File: manifest.File{Profile: "proj"}}
 			},
+			creds: map[string]*credentials.Token{
+				"default-user": {Token: "t"},
+				"proj":         {Token: "t2"},
+			},
+			defaultC: "default-user",
 			wantName: "proj",
 		},
 		{
 			name: "manifest profile missing falls through to default",
-			data: &global.Data{
-				Manifest: &manifest.Data{
-					File: manifest.File{Profile: "missing"},
-				},
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "user",
-						Tokens: config.AuthTokens{
-							"user": &config.AuthToken{Token: "t"},
-						},
-					},
-				},
+			mutate: func(d *global.Data) {
+				d.Manifest = &manifest.Data{File: manifest.File{Profile: "missing"}}
 			},
+			creds:    map[string]*credentials.Token{"user": {Token: "t"}},
+			defaultC: "user",
 			wantName: "user",
 		},
 		{
-			name: "default auth token name",
-			data: &global.Data{
-				Config: config.File{
-					Auth: config.Auth{
-						Default: "user",
-						Tokens: config.AuthTokens{
-							"user": &config.AuthToken{Token: "t"},
-						},
-					},
-				},
-			},
+			name:     "default auth token name",
+			creds:    map[string]*credentials.Token{"user": {Token: "t"}},
+			defaultC: "user",
 			wantName: "user",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.data.AuthTokenName()
+			d := makeData(tt.creds, tt.defaultC)
+			if tt.mutate != nil {
+				tt.mutate(d)
+			}
+			got := d.AuthTokenName()
 			if got != tt.wantName {
 				t.Errorf("AuthTokenName() = %q, want %q", got, tt.wantName)
 			}
@@ -243,23 +187,11 @@ func TestAuthTokenName(t *testing.T) {
 
 func TestTokenManifestProfileMissingNoSideEffect(t *testing.T) {
 	var buf threadsafe.Buffer
-	d := &global.Data{
-		Manifest: &manifest.Data{
-			File: manifest.File{Profile: "missing"},
-		},
-		Config: config.File{
-			Auth: config.Auth{
-				Default: "user",
-				Tokens: config.AuthTokens{
-					"user": &config.AuthToken{
-						Type:  config.AuthTokenTypeStatic,
-						Token: "default-token",
-					},
-				},
-			},
-		},
-		Output: &buf,
-	}
+	d := makeData(map[string]*credentials.Token{
+		"user": {Type: credentials.TypeStatic, Token: "default-token"},
+	}, "user")
+	d.Manifest = &manifest.Data{File: manifest.File{Profile: "missing"}}
+	d.Output = &buf
 
 	token, source := d.Token()
 	if token != "default-token" {

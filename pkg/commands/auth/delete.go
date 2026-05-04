@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/fastly/cli/pkg/argparser"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
 )
@@ -25,11 +27,19 @@ func NewDeleteCommand(parent argparser.Registerer, g *global.Data) *DeleteComman
 }
 
 func (c *DeleteCommand) Exec(in io.Reader, out io.Writer) error {
-	if c.Globals.Config.GetAuthToken(c.name) == nil {
+	existing, err := credentials.Lookup(c.Globals.Credentials, c.name)
+	if err != nil {
+		return fmt.Errorf("loading credential %q: %w", c.name, err)
+	}
+	if existing == nil {
 		return fmt.Errorf("token %q not found", c.name)
 	}
 
-	wasDefault := c.Globals.Config.Auth.Default == c.name
+	defaultName, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
+	wasDefault := defaultName == c.name
 
 	if wasDefault && !c.Globals.Flags.AutoYes && !c.Globals.Flags.NonInteractive {
 		text.Warning(out, "%q is your current default token. Deleting it will affect commands that don't use --token or FASTLY_API_TOKEN.", c.name)
@@ -42,19 +52,16 @@ func (c *DeleteCommand) Exec(in io.Reader, out io.Writer) error {
 		}
 	}
 
-	c.Globals.Config.DeleteAuthToken(c.name)
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-		return fmt.Errorf("error saving config: %w", err)
+	if err := c.Globals.Credentials.Delete(c.name); err != nil {
+		if errors.Is(err, credentials.ErrNotFound) {
+			return fmt.Errorf("token %q not found", c.name)
+		}
+		return err
 	}
 
 	text.Success(out, "Token %q removed", c.name)
 	if wasDefault {
-		if c.Globals.Config.Auth.Default != "" {
-			text.Info(out, "Default token reassigned to %q", c.Globals.Config.Auth.Default)
-		} else {
-			text.Warning(out, "No default token configured; use 'fastly auth use <name>' to set one")
-		}
+		text.Warning(out, "No default token configured; use 'fastly auth use <name>' to set one")
 	}
 	return nil
 }

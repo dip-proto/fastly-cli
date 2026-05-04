@@ -101,7 +101,7 @@ func TestSSO(t *testing.T) {
 				"Session token 'user' has been stored.",
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("user")
+				at := testutil.CredentialOrNil(opts, "user")
 				if at == nil {
 					t.Fatal("expected 'user' auth token to exist")
 				}
@@ -146,7 +146,7 @@ func TestSSO(t *testing.T) {
 				"Session token 'test_user' has been stored.",
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("test_user")
+				at := testutil.CredentialOrNil(opts, "test_user")
 				if at == nil {
 					t.Fatal("expected 'test_user' auth token to exist")
 				}
@@ -201,7 +201,7 @@ func TestSSO(t *testing.T) {
 				"{Latitude:1 Longitude:2 X:3 Y:4}",
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("user")
+				at := testutil.CredentialOrNil(opts, "user")
 				if at == nil {
 					t.Fatal("expected 'user' auth token to exist")
 				}
@@ -298,7 +298,7 @@ func TestSSO(t *testing.T) {
 				"{Latitude:1 Longitude:2 X:3 Y:4}",
 			},
 			Validator: func(t *testing.T, _ *testutil.CLIScenario, opts *global.Data, _ *threadsafe.Buffer) {
-				at := opts.Config.GetAuthToken("user")
+				at := testutil.CredentialOrNil(opts, "user")
 				if at == nil {
 					t.Fatal("expected 'user' auth token to exist")
 				}

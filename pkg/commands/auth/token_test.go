@@ -8,7 +8,7 @@ import (
 	"github.com/fastly/kingpin"
 
 	authcmd "github.com/fastly/cli/pkg/commands/auth"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 )
@@ -20,19 +20,10 @@ func newTokenCommand(g *global.Data) *authcmd.TokenCommand {
 }
 
 func globalDataWithToken(token string) *global.Data {
-	return &global.Data{
-		Config: config.File{
-			Auth: config.Auth{
-				Default: "user",
-				Tokens: config.AuthTokens{
-					"user": &config.AuthToken{
-						Type:  config.AuthTokenTypeStatic,
-						Token: token,
-					},
-				},
-			},
-		},
-	}
+	s := credentials.NewMemoryStore()
+	_ = s.Set("user", &credentials.Token{Type: credentials.TypeStatic, Token: token})
+	_ = s.SetDefault("user")
+	return &global.Data{Credentials: s}
 }
 
 func TestToken_NonTTY_Success(t *testing.T) {
@@ -52,9 +43,7 @@ func TestToken_NonTTY_Success(t *testing.T) {
 
 func TestToken_NonTTY_NoToken(t *testing.T) {
 	var buf bytes.Buffer
-	g := &global.Data{
-		Config: config.File{},
-	}
+	g := &global.Data{Credentials: credentials.NewMemoryStore()}
 
 	cmd := newTokenCommand(g)
 	err := cmd.Exec(nil, &buf)

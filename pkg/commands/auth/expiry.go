@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 )
 
@@ -37,65 +37,65 @@ const (
 // GetExpirationStatus computes the expiration status for a token.
 // It returns the status, the effective expiry time (zero if no expiry), and a
 // parse error if timestamp fields are present but malformed.
-func GetExpirationStatus(at *config.AuthToken, now time.Time) (ExpirationStatus, time.Time, error) {
-	if at == nil {
+func GetExpirationStatus(md *credentials.Metadata, now time.Time) (ExpirationStatus, time.Time, error) {
+	if md == nil {
 		return StatusNoExpiry, time.Time{}, nil
 	}
 
-	if at.NeedsReauth {
+	if md.NeedsReauth {
 		return StatusNeedsReauth, time.Time{}, nil
 	}
 
-	switch at.Type {
-	case config.AuthTokenTypeStatic:
-		return staticExpirationStatus(at, now)
-	case config.AuthTokenTypeSSO:
-		return ssoExpirationStatus(at, now)
+	switch md.Type {
+	case credentials.TypeStatic:
+		return staticExpirationStatus(md, now)
+	case credentials.TypeSSO:
+		return ssoExpirationStatus(md, now)
 	default:
 		// Unknown type; try static-style check on APITokenExpiresAt.
-		return staticExpirationStatus(at, now)
+		return staticExpirationStatus(md, now)
 	}
 }
 
-func staticExpirationStatus(at *config.AuthToken, now time.Time) (ExpirationStatus, time.Time, error) {
-	if at.APITokenExpiresAt == "" {
+func staticExpirationStatus(md *credentials.Metadata, now time.Time) (ExpirationStatus, time.Time, error) {
+	if md.APITokenExpiresAt == "" {
 		return StatusNoExpiry, time.Time{}, nil
 	}
 
-	expires, err := time.Parse(time.RFC3339, at.APITokenExpiresAt)
+	expires, err := time.Parse(time.RFC3339, md.APITokenExpiresAt)
 	if err != nil {
-		return StatusNoExpiry, time.Time{}, fmt.Errorf("invalid api_token_expires_at %q: %w", at.APITokenExpiresAt, err)
+		return StatusNoExpiry, time.Time{}, fmt.Errorf("invalid api_token_expires_at %q: %w", md.APITokenExpiresAt, err)
 	}
 
 	return classifyExpiry(expires, now, expiryWarningThreshold), expires, nil
 }
 
 // ssoExpirationStatus handles expiration for SSO tokens.
-func ssoExpirationStatus(at *config.AuthToken, now time.Time) (ExpirationStatus, time.Time, error) {
-	if at.APITokenExpiresAt != "" {
-		expires, err := time.Parse(time.RFC3339, at.APITokenExpiresAt)
+func ssoExpirationStatus(md *credentials.Metadata, now time.Time) (ExpirationStatus, time.Time, error) {
+	if md.APITokenExpiresAt != "" {
+		expires, err := time.Parse(time.RFC3339, md.APITokenExpiresAt)
 		if err == nil {
 			return classifyExpiry(expires, now, expiryWarningThreshold), expires, nil
 		}
 	}
 
-	if at.RefreshToken != "" && at.RefreshExpiresAt == "" {
+	if md.HasRefreshToken && md.RefreshExpiresAt == "" {
 		return StatusNoExpiry, time.Time{}, nil
 	}
 
-	if at.RefreshExpiresAt != "" {
-		expires, err := time.Parse(time.RFC3339, at.RefreshExpiresAt)
+	if md.RefreshExpiresAt != "" {
+		expires, err := time.Parse(time.RFC3339, md.RefreshExpiresAt)
 		if err == nil {
 			return classifyExpiry(expires, now, expiryWarningThreshold), expires, nil
 		}
 	}
 
-	if at.AccessExpiresAt != "" {
-		expires, err := time.Parse(time.RFC3339, at.AccessExpiresAt)
+	if md.AccessExpiresAt != "" {
+		expires, err := time.Parse(time.RFC3339, md.AccessExpiresAt)
 		if err == nil {
 			return classifyExpiry(expires, now, accessOnlyWarningThreshold), expires, nil
 		}
-		return StatusNoExpiry, time.Time{}, fmt.Errorf("invalid access_expires_at %q: %w", at.AccessExpiresAt, err)
+		return StatusNoExpiry, time.Time{}, fmt.Errorf("invalid access_expires_at %q: %w", md.AccessExpiresAt, err)
 	}
 
 	return StatusNoExpiry, time.Time{}, nil

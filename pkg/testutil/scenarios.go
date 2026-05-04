@@ -168,6 +168,7 @@ func RunCLIScenario(t *testing.T, command []string, scenario CLIScenario) {
 
 		if scenario.ConfigFile != nil {
 			opts.Config = *scenario.ConfigFile
+			SyncCredentialsWithConfigAuth(opts)
 		}
 
 		if scenario.EnvVars != nil {

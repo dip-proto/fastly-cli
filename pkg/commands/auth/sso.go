@@ -11,7 +11,7 @@ import (
 
 	"github.com/fastly/cli/pkg/api/undocumented"
 	"github.com/fastly/cli/pkg/auth"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/env"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
@@ -23,7 +23,11 @@ import (
 // It derives the token name from the current context via identifyTokenName,
 // which preserves naming behavior for re-auth flows (refresh/expired tokens).
 func RunSSO(in io.Reader, out io.Writer, g *global.Data, forceReAuth bool, skipPrompt bool) error {
-	return RunSSOWithTokenName(in, out, g, forceReAuth, skipPrompt, identifyTokenName(g))
+	name, err := identifyTokenName(g)
+	if err != nil {
+		return err
+	}
+	return RunSSOWithTokenName(in, out, g, forceReAuth, skipPrompt, name)
 }
 
 // RunSSOWithTokenName is like RunSSO but accepts an explicit token name
@@ -32,13 +36,17 @@ func RunSSOWithTokenName(in io.Reader, out io.Writer, g *global.Data, forceReAut
 	if forceReAuth {
 		g.AuthServer.SetParam("prompt", "login select_account")
 	} else {
-		if at := g.Config.GetAuthToken(tokenName); at != nil {
+		md, err := credentials.LookupMetadata(g.Credentials, tokenName)
+		if err != nil {
+			return fmt.Errorf("resolving credential %q: %w", tokenName, err)
+		}
+		if md != nil {
 			g.AuthServer.SetParam("prompt", "login")
-			if at.Email != "" {
-				g.AuthServer.SetParam("login_hint", at.Email)
+			if md.Email != "" {
+				g.AuthServer.SetParam("login_hint", md.Email)
 			}
-			if at.AccountID != "" {
-				g.AuthServer.SetParam("account_hint", at.AccountID)
+			if md.AccountID != "" {
+				g.AuthServer.SetParam("account_hint", md.AccountID)
 			}
 		} else {
 			g.AuthServer.SetParam("prompt", "login select_account")
@@ -119,22 +127,28 @@ func RunSSOWithTokenName(in io.Reader, out io.Writer, g *global.Data, forceReAut
 		msg += " Use 'fastly auth list' to view tokens."
 	}
 	text.Success(out, msg)
-	text.Info(out, "Token saved to %s", g.ConfigPath)
+	text.Info(out, "Token saved to %s", g.CredentialsPath)
 	return nil
 }
 
-// identifyTokenName determines which auth token name to use for SSO.
-func identifyTokenName(g *global.Data) string {
+// identifyTokenName determines the SSO token name. Store errors other
+// than ErrNoDefault propagate so the browser flow does not start
+// against a broken store.
+func identifyTokenName(g *global.Data) (string, error) {
 	if g.Flags.Token != "" {
-		return g.Flags.Token
+		return g.Flags.Token, nil
 	}
 	if g.Manifest != nil && g.Manifest.File.Profile != "" {
-		return g.Manifest.File.Profile
+		return g.Manifest.File.Profile, nil
 	}
-	if name, _ := g.Config.GetDefaultAuthToken(); name != "" {
-		return name
+	name, err := credentials.DefaultOrEmpty(g.Credentials)
+	if err != nil {
+		return "", fmt.Errorf("resolving default credential: %w", err)
 	}
-	return "default"
+	if name == "" {
+		return "default", nil
+	}
+	return name, nil
 }
 
 // CurrentCustomerResponse models the Fastly API response for the
@@ -186,8 +200,8 @@ func storeAuthToken(g *global.Data, ar auth.AuthorizationResult, tokenName, cust
 		label = fmt.Sprintf("%s (%s)", customerName, ar.Email)
 	}
 
-	at := &config.AuthToken{
-		Type:             config.AuthTokenTypeSSO,
+	t := &credentials.Token{
+		Type:             credentials.TypeSSO,
 		Token:            ar.SessionToken,
 		Label:            label,
 		AccountID:        customerID,
@@ -198,16 +212,10 @@ func storeAuthToken(g *global.Data, ar auth.AuthorizationResult, tokenName, cust
 		RefreshExpiresAt: now.Add(time.Duration(ar.Jwt.RefreshExpiresIn) * time.Second).Format(time.RFC3339),
 	}
 
-	EnrichWithTokenSelf(g, at)
+	EnrichWithTokenSelf(g, t)
 
-	g.Config.SetAuthToken(tokenName, at)
-
-	if g.Config.Auth.Default == "" {
-		g.Config.Auth.Default = tokenName
-	}
-
-	if err := g.Config.Write(g.ConfigPath); err != nil {
-		return fmt.Errorf("failed to update config file: %w", err)
+	if _, err := credentials.SetAndPromote(g.Credentials, tokenName, t); err != nil {
+		return fmt.Errorf("failed to update credentials: %w", err)
 	}
 	return nil
 }

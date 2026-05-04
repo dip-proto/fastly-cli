@@ -4,14 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/fastly/cli/pkg/argparser"
 	authcmd "github.com/fastly/cli/pkg/commands/auth"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -46,7 +43,11 @@ func (c *CreateCommand) Exec(in io.Reader, out io.Writer) (err error) {
 	}
 	text.Output(out, "Creating profile '%s'", c.profile)
 
-	if c.Globals.Config.GetAuthToken(c.profile) != nil {
+	existing, err := credentials.Lookup(c.Globals.Credentials, c.profile)
+	if err != nil {
+		return fmt.Errorf("loading credential %q: %w", c.profile, err)
+	}
+	if existing != nil {
 		return fsterr.RemediationError{
 			Inner:       fmt.Errorf("profile '%s' already exists", c.profile),
 			Remediation: "Re-run the command and pass a different value for the 'profile' argument.",
@@ -54,7 +55,11 @@ func (c *CreateCommand) Exec(in io.Reader, out io.Writer) (err error) {
 	}
 
 	makeDefault := true
-	if name, _ := c.Globals.Config.GetDefaultAuthToken(); name != "" && !c.Globals.Flags.AutoYes && !c.Globals.Flags.NonInteractive {
+	name, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
+	if name != "" && !c.Globals.Flags.AutoYes && !c.Globals.Flags.NonInteractive {
 		makeDefault, err = c.promptForDefault(in, out)
 		if err != nil {
 			return err
@@ -67,7 +72,9 @@ func (c *CreateCommand) Exec(in io.Reader, out io.Writer) (err error) {
 			return fmt.Errorf("failed to authenticate: %w", err)
 		}
 		if makeDefault {
-			c.Globals.Config.Auth.Default = c.profile
+			if err := c.Globals.Credentials.SetDefault(c.profile); err != nil {
+				return fmt.Errorf("failed to set default profile: %w", err)
+			}
 		}
 		text.Break(out)
 	} else {
@@ -76,11 +83,7 @@ func (c *CreateCommand) Exec(in io.Reader, out io.Writer) (err error) {
 		}
 	}
 
-	if err := c.persistCfg(); err != nil {
-		return err
-	}
-
-	displayCfgPath(c.Globals.ConfigPath, out)
+	displayCfgPath(c.Globals.CredentialsPath, out)
 	text.Success(out, "Profile '%s' created", c.profile)
 	return nil
 }
@@ -113,8 +116,7 @@ func (c *CreateCommand) staticTokenFlow(makeDefault bool, in io.Reader, out io.W
 	}
 
 	return spinner.Process("Persisting configuration", func(_ *text.SpinnerWrapper) error {
-		authcmd.BuildAndStoreStaticToken(c.Globals, token, c.profile, md, makeDefault)
-		return nil
+		return authcmd.BuildAndStoreStaticToken(c.Globals, token, c.profile, md, makeDefault)
 	})
 }
 
@@ -139,30 +141,6 @@ func validateTokenNotEmpty(s string) error {
 // ErrEmptyToken is returned when a user tries to supply an empty string as a
 // token in the terminal prompt.
 var ErrEmptyToken = errors.New("token cannot be empty")
-
-func (c *CreateCommand) persistCfg() error {
-	dir := filepath.Dir(c.Globals.ConfigPath)
-	fi, err := os.Stat(dir)
-	switch {
-	case err == nil && !fi.IsDir():
-		return fmt.Errorf("config file path %s isn't a directory", dir)
-	case err != nil && errors.Is(err, fs.ErrNotExist):
-		if err := os.MkdirAll(dir, config.DirectoryPermissions); err != nil {
-			c.Globals.ErrLog.AddWithContext(err, map[string]any{
-				"Directory":   dir,
-				"Permissions": config.DirectoryPermissions,
-			})
-			return fmt.Errorf("error creating config file directory: %w", err)
-		}
-	}
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-		c.Globals.ErrLog.Add(err)
-		return fmt.Errorf("error saving config file: %w", err)
-	}
-
-	return nil
-}
 
 func displayCfgPath(path string, out io.Writer) {
 	filePath := strings.ReplaceAll(path, " ", `\ `)

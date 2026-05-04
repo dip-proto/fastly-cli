@@ -6,6 +6,7 @@ import (
 	"github.com/fastly/cli/pkg/api"
 	"github.com/fastly/cli/pkg/auth"
 	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/github"
 	"github.com/fastly/cli/pkg/lookup"
@@ -59,6 +60,12 @@ type Data struct {
 	Config config.File
 	// ConfigPath is the path to the CLI's application configuration.
 	ConfigPath string
+	// Credentials is the credential store. Token resolution assumes
+	// it is non-nil.
+	Credentials credentials.Store
+	// CredentialsPath is the credentials.toml path for user-facing
+	// messages. Empty for non-file backends.
+	CredentialsPath string
 	// Env is all the data that is provided by the environment.
 	Env config.Environment
 	// ErrLog provides an interface for recording errors to disk.
@@ -95,16 +102,16 @@ type Data struct {
 // Token yields the Fastly API token.
 //
 // Order of precedence:
-//   - The --token flag (if it matches a stored auth token name, use that token).
+//   - The --token flag (if it matches a stored credential name, use that token).
 //   - The --token flag (treated as a raw API token).
 //   - The FASTLY_API_TOKEN environment variable.
-//   - The `profile` manifest field mapped to an auth token name.
-//   - The default [auth] token (if configured).
+//   - The `profile` manifest field mapped to a credential name.
+//   - The default credential (if configured).
 func (d *Data) Token() (string, lookup.Source) {
 	// --token: check if it matches a stored auth token name first.
 	if d.Flags.Token != "" {
-		if at := d.Config.GetAuthToken(d.Flags.Token); at != nil && at.Token != "" {
-			return at.Token, lookup.SourceAuth
+		if t, _ := credentials.Lookup(d.Credentials, d.Flags.Token); t != nil && t.Token != "" {
+			return t.Token, lookup.SourceAuth
 		}
 		return d.Flags.Token, lookup.SourceFlag
 	}
@@ -115,14 +122,14 @@ func (d *Data) Token() (string, lookup.Source) {
 	}
 
 	if d.Manifest != nil && d.Manifest.File.Profile != "" {
-		if at := d.Config.GetAuthToken(d.Manifest.File.Profile); at != nil && at.Token != "" {
-			return at.Token, lookup.SourceAuth
+		if t, _ := credentials.Lookup(d.Credentials, d.Manifest.File.Profile); t != nil && t.Token != "" {
+			return t.Token, lookup.SourceAuth
 		}
 	}
 
-	// [auth] section default token.
-	if _, at := d.Config.GetDefaultAuthToken(); at != nil && at.Token != "" {
-		return at.Token, lookup.SourceAuth
+	// Default credential.
+	if _, t, _ := credentials.GetDefault(d.Credentials); t != nil && t.Token != "" {
+		return t.Token, lookup.SourceAuth
 	}
 
 	return "", lookup.SourceUndefined
@@ -133,19 +140,19 @@ func (d *Data) Token() (string, lookup.Source) {
 func (d *Data) AuthTokenName() string {
 	// If --token matches a stored auth token name, return that name.
 	if d.Flags.Token != "" {
-		if at := d.Config.GetAuthToken(d.Flags.Token); at != nil {
+		if t, _ := credentials.Lookup(d.Credentials, d.Flags.Token); t != nil {
 			return d.Flags.Token
 		}
 		return ""
 	}
 
 	if d.Manifest != nil && d.Manifest.File.Profile != "" {
-		if at := d.Config.GetAuthToken(d.Manifest.File.Profile); at != nil {
+		if t, _ := credentials.Lookup(d.Credentials, d.Manifest.File.Profile); t != nil {
 			return d.Manifest.File.Profile
 		}
 	}
 	// Otherwise return the default auth token name.
-	name, _ := d.Config.GetDefaultAuthToken()
+	name, _ := credentials.DefaultOrEmpty(d.Credentials)
 	return name
 }
 

@@ -8,7 +8,7 @@ import (
 	"github.com/fastly/go-fastly/v14/fastly"
 
 	"github.com/fastly/cli/pkg/api"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/global"
 )
 
@@ -82,12 +82,12 @@ func FetchTokenMetadataLenient(g *global.Data, token string) (*TokenMetadata, er
 	return md, nil
 }
 
-// EnrichWithTokenSelf calls GetTokenSelf to populate API token metadata on
-// an existing AuthToken. It constructs its own API client from the token.
-// This is best-effort: failures are logged and existing fields are preserved.
-func EnrichWithTokenSelf(g *global.Data, at *config.AuthToken) {
+// EnrichWithTokenSelf populates API token metadata on t via
+// GetTokenSelf. Best-effort: failures are logged and existing fields
+// stay put.
+func EnrichWithTokenSelf(g *global.Data, t *credentials.Token) {
 	endpoint, _ := g.APIEndpoint()
-	apiClient, err := g.APIClientFactory(at.Token, endpoint, g.Flags.Debug)
+	apiClient, err := g.APIClientFactory(t.Token, endpoint, g.Flags.Debug)
 	if err != nil {
 		g.ErrLog.Add(fmt.Errorf("EnrichWithTokenSelf: error creating API client: %w", err))
 		return
@@ -95,18 +95,18 @@ func EnrichWithTokenSelf(g *global.Data, at *config.AuthToken) {
 
 	var md TokenMetadata
 	if fetchTokenSelf(g, apiClient, &md) {
-		at.APITokenName = md.APITokenName
-		at.APITokenScope = md.APITokenScope
-		at.APITokenExpiresAt = md.APITokenExpiresAt
-		at.APITokenID = md.APITokenID
+		t.APITokenName = md.APITokenName
+		t.APITokenScope = md.APITokenScope
+		t.APITokenExpiresAt = md.APITokenExpiresAt
+		t.APITokenID = md.APITokenID
 	}
 }
 
-// BuildAndStoreStaticToken constructs an AuthToken from pre-fetched metadata
-// and stores it under the given name. Does NOT write config to disk.
-func BuildAndStoreStaticToken(g *global.Data, token, name string, md *TokenMetadata, makeDefault bool) {
-	entry := &config.AuthToken{
-		Type:              config.AuthTokenTypeStatic,
+// BuildAndStoreStaticToken persists a static credential built from
+// pre-fetched metadata. If makeDefault is true, it is also promoted.
+func BuildAndStoreStaticToken(g *global.Data, token, name string, md *TokenMetadata, makeDefault bool) error {
+	entry := &credentials.Token{
+		Type:              credentials.TypeStatic,
 		Token:             token,
 		Email:             md.Email,
 		AccountID:         md.AccountID,
@@ -116,16 +116,19 @@ func BuildAndStoreStaticToken(g *global.Data, token, name string, md *TokenMetad
 		APITokenID:        md.APITokenID,
 	}
 
-	g.Config.SetAuthToken(name, entry)
-
-	if makeDefault {
-		g.Config.Auth.Default = name
+	if err := g.Credentials.Set(name, entry); err != nil {
+		return fmt.Errorf("storing credential %q: %w", name, err)
 	}
+	if makeDefault {
+		if err := g.Credentials.SetDefault(name); err != nil {
+			return fmt.Errorf("setting default credential: %w", err)
+		}
+	}
+	return nil
 }
 
-// StoreStaticToken validates a raw API token, fetches metadata, and stores it
-// in the auth config as the default token. Returns the stored name and
-// metadata.
+// StoreStaticToken validates token, fetches metadata, and stores it as
+// the default credential. Returns the stored name and metadata.
 func StoreStaticToken(g *global.Data, token string) (name string, md *TokenMetadata, err error) {
 	md, err = FetchTokenMetadata(g, token)
 	if err != nil {
@@ -137,12 +140,9 @@ func StoreStaticToken(g *global.Data, token string) (name string, md *TokenMetad
 		name = "default"
 	}
 
-	BuildAndStoreStaticToken(g, token, name, md, true)
-
-	if err := g.Config.Write(g.ConfigPath); err != nil {
-		return "", nil, fmt.Errorf("error saving config: %w", err)
+	if err := BuildAndStoreStaticToken(g, token, name, md, true); err != nil {
+		return "", nil, err
 	}
-
 	return name, md, nil
 }
 

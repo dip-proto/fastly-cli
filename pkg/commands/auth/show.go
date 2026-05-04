@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/fastly/cli/pkg/argparser"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	"github.com/fastly/cli/pkg/env"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/lookup"
@@ -41,61 +41,66 @@ func (c *ShowCommand) Exec(_ io.Reader, out io.Writer) error {
 			return fmt.Errorf("current token is not stored (provided via --token or %s); use `fastly auth add` or `fastly auth show <name>`", env.APIToken)
 		case lookup.SourceFile, lookup.SourceDefault, lookup.SourceAuth:
 			c.name = c.Globals.AuthTokenName()
-			if c.name == "" {
-				c.name = c.Globals.Config.Auth.Default
-			}
 		}
 	}
 
-	entry := c.Globals.Config.GetAuthToken(c.name)
-	if entry == nil {
+	stored, err := credentials.Lookup(c.Globals.Credentials, c.name)
+	if err != nil {
+		return fmt.Errorf("loading credential %q: %w", c.name, err)
+	}
+	if stored == nil {
 		return fmt.Errorf("token %q not found", c.name)
 	}
 
-	isDefault := c.name == c.Globals.Config.Auth.Default
+	defaultName, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+	if err != nil {
+		return fmt.Errorf("resolving default credential: %w", err)
+	}
+	isDefault := c.name == defaultName
 	defaultStr := ""
 	if isDefault {
 		defaultStr = " (default)"
 	}
 
 	text.Output(out, "Name: %s%s\n", c.name, defaultStr)
-	text.Output(out, "Type: %s\n", entry.Type)
+	text.Output(out, "Type: %s\n", stored.Type)
 
-	if entry.Email != "" {
-		text.Output(out, "Email: %s\n", entry.Email)
+	if stored.Email != "" {
+		text.Output(out, "Email: %s\n", stored.Email)
 	}
-	if entry.AccountID != "" {
-		text.Output(out, "Account ID: %s\n", entry.AccountID)
+	if stored.AccountID != "" {
+		text.Output(out, "Account ID: %s\n", stored.AccountID)
 	}
-	if entry.Label != "" {
-		text.Output(out, "Label: %s\n", entry.Label)
+	if stored.Label != "" {
+		text.Output(out, "Label: %s\n", stored.Label)
 	}
-	if entry.APITokenName != "" {
-		text.Output(out, "API token name: %s\n", entry.APITokenName)
+	if stored.APITokenName != "" {
+		text.Output(out, "API token name: %s\n", stored.APITokenName)
 	}
-	if entry.APITokenScope != "" {
-		text.Output(out, "API token scope: %s\n", entry.APITokenScope)
+	if stored.APITokenScope != "" {
+		text.Output(out, "API token scope: %s\n", stored.APITokenScope)
 	}
 	now := time.Now()
-	status, expires, parseErr := GetExpirationStatus(entry, now)
+	md := stored.Metadata()
+	status, expires, parseErr := GetExpirationStatus(md, now)
 	if parseErr != nil && c.Globals.ErrLog != nil {
 		c.Globals.ErrLog.Add(parseErr)
 	}
 
-	if entry.APITokenExpiresAt != "" {
-		line := "API token expires at: " + entry.APITokenExpiresAt
-		if summary := apiTokenExpirySummary(entry, expires, now); summary != "" {
+	if stored.APITokenExpiresAt != "" {
+		line := "API token expires at: " + stored.APITokenExpiresAt
+		if summary := apiTokenExpirySummary(stored, expires, now); summary != "" {
 			line += " (" + summary + ")"
 		}
 		text.Output(out, "%s\n", line)
 	}
-	if entry.APITokenID != "" {
-		text.Output(out, "API token ID: %s\n", entry.APITokenID)
+	if stored.APITokenID != "" {
+		text.Output(out, "API token ID: %s\n", stored.APITokenID)
 	}
 
 	// For SSO tokens, show the session (refresh) expiry as the user-actionable deadline.
-	if entry.Type == config.AuthTokenTypeSSO && entry.RefreshExpiresAt != "" && !entry.NeedsReauth {
-		line := "SSO session expires at: " + entry.RefreshExpiresAt
+	if stored.Type == credentials.TypeSSO && stored.RefreshExpiresAt != "" && !stored.NeedsReauth {
+		line := "SSO session expires at: " + stored.RefreshExpiresAt
 		if summary := ExpirationSummary(status, expires, now); summary != "" {
 			line += " (" + summary + ")"
 		}
@@ -103,19 +108,19 @@ func (c *ShowCommand) Exec(_ io.Reader, out io.Writer) error {
 	}
 
 	if c.reveal {
-		text.Output(out, "Token: %s\n", entry.Token)
+		text.Output(out, "Token: %s\n", stored.Token)
 	} else {
-		if len(entry.Token) > 8 {
-			text.Output(out, "Token: %s...%s\n", entry.Token[:4], entry.Token[len(entry.Token)-4:])
+		if len(stored.Token) > 8 {
+			text.Output(out, "Token: %s...%s\n", stored.Token[:4], stored.Token[len(stored.Token)-4:])
 		} else {
 			text.Output(out, "Token: ****\n")
 		}
 	}
 
-	if entry.NeedsReauth {
-		text.Warning(out, "This token needs re-authentication. %s\n", ExpirationRemediation(entry.Type))
+	if stored.NeedsReauth {
+		text.Warning(out, "This token needs re-authentication. %s\n", ExpirationRemediation(stored.Type))
 	} else if status == StatusExpired {
-		text.Warning(out, "This token has expired. %s\n", ExpirationRemediation(entry.Type))
+		text.Warning(out, "This token has expired. %s\n", ExpirationRemediation(stored.Type))
 	}
 
 	return nil
@@ -124,8 +129,8 @@ func (c *ShowCommand) Exec(_ io.Reader, out io.Writer) error {
 // apiTokenExpirySummary returns a relative-time string for the APITokenExpiresAt
 // field specifically. For static tokens this uses the main expiry status; for SSO
 // tokens the APITokenExpiresAt is secondary so we parse it independently.
-func apiTokenExpirySummary(entry *config.AuthToken, mainExpires time.Time, now time.Time) string {
-	if entry.Type == config.AuthTokenTypeStatic {
+func apiTokenExpirySummary(t *credentials.Token, mainExpires time.Time, now time.Time) string {
+	if t.Type == credentials.TypeStatic {
 		// For static tokens, APITokenExpiresAt IS the effective expiry.
 		if mainExpires.IsZero() {
 			return ""
@@ -138,10 +143,10 @@ func apiTokenExpirySummary(entry *config.AuthToken, mainExpires time.Time, now t
 
 	// For SSO tokens, parse APITokenExpiresAt independently since the main
 	// expiry status tracks RefreshExpiresAt.
-	if entry.APITokenExpiresAt == "" {
+	if t.APITokenExpiresAt == "" {
 		return ""
 	}
-	apiExpires, err := time.Parse(time.RFC3339, entry.APITokenExpiresAt)
+	apiExpires, err := time.Parse(time.RFC3339, t.APITokenExpiresAt)
 	if err != nil {
 		return ""
 	}

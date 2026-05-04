@@ -8,32 +8,44 @@ import (
 	"time"
 
 	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/manifest"
 )
 
-// expiringTokenData returns a global.Data configured with a stored token that
-// expires soon. Callers can override Flags and commandName to test suppression.
+func staticToken(apiTokenExpiresAt string) credentials.Store {
+	const name = "mytoken"
+	s := credentials.NewMemoryStore()
+	_ = s.Set(name, &credentials.Token{
+		Type:              credentials.TypeStatic,
+		Token:             "tok_abc123",
+		APITokenExpiresAt: apiTokenExpiresAt,
+	})
+	_ = s.SetDefault(name)
+	return s
+}
+
+func ssoToken(refreshExpiresAt string) credentials.Store {
+	const name = "sso-tok"
+	s := credentials.NewMemoryStore()
+	_ = s.Set(name, &credentials.Token{
+		Type:             credentials.TypeSSO,
+		Token:            "tok_sso",
+		RefreshExpiresAt: refreshExpiresAt,
+	})
+	_ = s.SetDefault(name)
+	return s
+}
+
 func expiringTokenData(out *bytes.Buffer) *global.Data {
 	soon := time.Now().Add(20 * time.Minute).Format(time.RFC3339)
 	return &global.Data{
-		Output:    out,
-		ErrOutput: out,
-		ErrLog:    fsterr.Log,
-		Manifest:  &manifest.Data{},
-		Config: config.File{
-			Auth: config.Auth{
-				Default: "mytoken",
-				Tokens: config.AuthTokens{
-					"mytoken": &config.AuthToken{
-						Type:              config.AuthTokenTypeStatic,
-						Token:             "tok_abc123",
-						APITokenExpiresAt: soon,
-					},
-				},
-			},
-		},
+		Output:      out,
+		ErrOutput:   out,
+		ErrLog:      fsterr.Log,
+		Manifest:    &manifest.Data{},
+		Credentials: staticToken(soon),
 	}
 }
 
@@ -53,21 +65,10 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					ErrLog:    fsterr.Log,
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "mytoken",
-							Tokens: config.AuthTokens{
-								"mytoken": &config.AuthToken{
-									Type:              config.AuthTokenTypeStatic,
-									Token:             "tok_abc123",
-									APITokenExpiresAt: soon,
-								},
-							},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					ErrLog:      fsterr.Log,
+					Credentials: staticToken(soon),
 				}
 			},
 			wantWarn:   true,
@@ -78,21 +79,10 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					ErrLog:    fsterr.Log,
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "mytoken",
-							Tokens: config.AuthTokens{
-								"mytoken": &config.AuthToken{
-									Type:              config.AuthTokenTypeStatic,
-									Token:             "tok_abc123",
-									APITokenExpiresAt: farFuture,
-								},
-							},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					ErrLog:      fsterr.Log,
+					Credentials: staticToken(farFuture),
 				}
 			},
 			wantWarn: false,
@@ -102,22 +92,11 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					ErrLog:    fsterr.Log,
-					Env:       config.Environment{APIToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.fake"},
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "mytoken",
-							Tokens: config.AuthTokens{
-								"mytoken": &config.AuthToken{
-									Type:              config.AuthTokenTypeStatic,
-									Token:             "tok_abc123",
-									APITokenExpiresAt: soon,
-								},
-							},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					ErrLog:      fsterr.Log,
+					Env:         config.Environment{APIToken: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.fake"},
+					Credentials: staticToken(soon),
 				}
 			},
 			wantWarn: false,
@@ -127,22 +106,11 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					ErrLog:    fsterr.Log,
-					Flags:     global.Flags{Token: "some-raw-token"},
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "mytoken",
-							Tokens: config.AuthTokens{
-								"mytoken": &config.AuthToken{
-									Type:              config.AuthTokenTypeStatic,
-									Token:             "tok_abc123",
-									APITokenExpiresAt: soon,
-								},
-							},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					ErrLog:      fsterr.Log,
+					Flags:       global.Flags{Token: "some-raw-token"},
+					Credentials: staticToken(soon),
 				}
 			},
 			wantWarn: false,
@@ -152,15 +120,10 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					ErrLog:    fsterr.Log,
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "deleted-token",
-							Tokens:  config.AuthTokens{},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					ErrLog:      fsterr.Log,
+					Credentials: credentials.NewMemoryStore(),
 				}
 			},
 			wantWarn: false,
@@ -170,21 +133,10 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					ErrLog:    fsterr.Log,
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "mytoken",
-							Tokens: config.AuthTokens{
-								"mytoken": &config.AuthToken{
-									Type:              config.AuthTokenTypeStatic,
-									Token:             "tok_abc123",
-									APITokenExpiresAt: "not-a-date",
-								},
-							},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					ErrLog:      fsterr.Log,
+					Credentials: staticToken("not-a-date"),
 				}
 			},
 			wantWarn: false,
@@ -194,20 +146,9 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "mytoken",
-							Tokens: config.AuthTokens{
-								"mytoken": &config.AuthToken{
-									Type:              config.AuthTokenTypeStatic,
-									Token:             "tok_abc123",
-									APITokenExpiresAt: "not-a-date",
-								},
-							},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					Credentials: staticToken("not-a-date"),
 				}
 			},
 			wantWarn: false,
@@ -217,21 +158,10 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 			commandName: "service list",
 			data: func(out *bytes.Buffer) *global.Data {
 				return &global.Data{
-					Output:    out,
-					ErrOutput: out,
-					ErrLog:    fsterr.Log,
-					Config: config.File{
-						Auth: config.Auth{
-							Default: "sso-tok",
-							Tokens: config.AuthTokens{
-								"sso-tok": &config.AuthToken{
-									Type:             config.AuthTokenTypeSSO,
-									Token:            "tok_sso",
-									RefreshExpiresAt: soon,
-								},
-							},
-						},
-					},
+					Output:      out,
+					ErrOutput:   out,
+					ErrLog:      fsterr.Log,
+					Credentials: ssoToken(soon),
 				}
 			},
 			wantWarn:   true,
@@ -239,7 +169,6 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 		},
 	}
 
-	// Ensure FASTLY_DISABLE_AUTH_COMMAND is not set.
 	originalEnv := os.Getenv("FASTLY_DISABLE_AUTH_COMMAND")
 	os.Setenv("FASTLY_DISABLE_AUTH_COMMAND", "")
 	defer os.Setenv("FASTLY_DISABLE_AUTH_COMMAND", originalEnv)
@@ -248,14 +177,10 @@ func TestCheckTokenExpirationWarning(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			data := tt.data(&buf)
-
-			// Ensure Manifest is initialized to avoid nil panics in Token().
 			if data.Manifest == nil {
 				data.Manifest = &manifest.Data{}
 			}
-
 			checkTokenExpirationWarning(data, tt.commandName)
-
 			output := buf.String()
 			if tt.wantWarn && output == "" {
 				t.Error("expected warning output but got none")
@@ -289,64 +214,23 @@ func TestCheckTokenExpirationWarningDisabledAuth(t *testing.T) {
 	}
 }
 
-// TestCheckTokenExpirationWarningSuppression tests that the warning is
-// suppressed for all auth-related commands, --quiet, and --json (which sets
-// Quiet=true). The auth-related set matches FASTLY_DISABLE_AUTH_COMMAND
-// (pkg/env/env.go): auth, auth-token, sso, profile, whoami.
 func TestCheckTokenExpirationWarningSuppression(t *testing.T) {
 	tests := []struct {
 		name        string
 		commandName string
 		flags       global.Flags
 	}{
-		// auth family.
-		{
-			name:        "suppressed for auth list",
-			commandName: "auth list",
-		},
-		{
-			name:        "suppressed for auth show",
-			commandName: "auth show",
-		},
-		{
-			name:        "suppressed for auth login",
-			commandName: "auth login",
-		},
-		{
-			name:        "suppressed for bare auth",
-			commandName: "auth",
-		},
-		// Other auth-related families.
-		{
-			name:        "suppressed for sso",
-			commandName: "sso",
-		},
-		{
-			name:        "suppressed for auth-token create",
-			commandName: "auth-token create",
-		},
-		{
-			name:        "suppressed for bare auth-token",
-			commandName: "auth-token",
-		},
-		{
-			name:        "suppressed for profile switch",
-			commandName: "profile switch",
-		},
-		{
-			name:        "suppressed for bare profile",
-			commandName: "profile",
-		},
-		{
-			name:        "suppressed for whoami",
-			commandName: "whoami",
-		},
-		// Flag-based suppression.
-		{
-			name:        "suppressed with --quiet flag",
-			commandName: "service list",
-			flags:       global.Flags{Quiet: true},
-		},
+		{name: "suppressed for auth list", commandName: "auth list"},
+		{name: "suppressed for auth show", commandName: "auth show"},
+		{name: "suppressed for auth login", commandName: "auth login"},
+		{name: "suppressed for bare auth", commandName: "auth"},
+		{name: "suppressed for sso", commandName: "sso"},
+		{name: "suppressed for auth-token create", commandName: "auth-token create"},
+		{name: "suppressed for bare auth-token", commandName: "auth-token"},
+		{name: "suppressed for profile switch", commandName: "profile switch"},
+		{name: "suppressed for bare profile", commandName: "profile"},
+		{name: "suppressed for whoami", commandName: "whoami"},
+		{name: "suppressed with --quiet flag", commandName: "service list", flags: global.Flags{Quiet: true}},
 	}
 
 	originalEnv := os.Getenv("FASTLY_DISABLE_AUTH_COMMAND")
@@ -358,9 +242,7 @@ func TestCheckTokenExpirationWarningSuppression(t *testing.T) {
 			var buf bytes.Buffer
 			data := expiringTokenData(&buf)
 			data.Flags = tt.flags
-
 			checkTokenExpirationWarning(data, tt.commandName)
-
 			output := buf.String()
 			if output != "" {
 				t.Errorf("expected no output for %q with flags %+v, got: %s", tt.commandName, tt.flags, output)
@@ -369,35 +251,24 @@ func TestCheckTokenExpirationWarningSuppression(t *testing.T) {
 	}
 }
 
-// TestCheckTokenExpirationWarningShownForJSON verifies that --json mode still
-// emits the warning (to stderr) rather than suppressing it entirely.
 func TestCheckTokenExpirationWarningShownForJSON(t *testing.T) {
 	var buf bytes.Buffer
 	data := expiringTokenData(&buf)
 	data.Flags = global.Flags{JSON: true}
-
 	checkTokenExpirationWarning(data, "service list")
-
 	output := buf.String()
 	if !strings.Contains(output, "expires in") {
 		t.Errorf("expected expiry warning in --json mode (written to stderr), got: %s", output)
 	}
 }
 
-// TestCheckTokenExpirationWarningNotSuppressedForNonAuth ensures that commands
-// starting with "auth" as a prefix of another word (e.g. "authtoken") are not
-// incorrectly suppressed.
 func TestCheckTokenExpirationWarningNotSuppressedForNonAuth(t *testing.T) {
 	originalEnv := os.Getenv("FASTLY_DISABLE_AUTH_COMMAND")
 	os.Setenv("FASTLY_DISABLE_AUTH_COMMAND", "")
 	defer os.Setenv("FASTLY_DISABLE_AUTH_COMMAND", originalEnv)
-
 	var buf bytes.Buffer
 	data := expiringTokenData(&buf)
-
-	// "authtoken" is not "auth" or "auth <sub>", so warning should fire.
 	checkTokenExpirationWarning(data, "authtoken list")
-
 	output := buf.String()
 	if output == "" {
 		t.Error("expected warning for non-auth command 'authtoken list' but got none")

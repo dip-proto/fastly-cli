@@ -7,7 +7,7 @@ import (
 
 	"github.com/fastly/cli/pkg/argparser"
 	authcmd "github.com/fastly/cli/pkg/commands/auth"
-	"github.com/fastly/cli/pkg/config"
+	"github.com/fastly/cli/pkg/credentials"
 	fsterr "github.com/fastly/cli/pkg/errors"
 	"github.com/fastly/cli/pkg/global"
 	"github.com/fastly/cli/pkg/text"
@@ -61,12 +61,8 @@ func (c *UpdateCommand) Exec(in io.Reader, out io.Writer) error {
 	}
 
 	if makeDefault {
-		if err := c.Globals.Config.SetDefaultAuthToken(profileName); err != nil {
+		if err := c.Globals.Credentials.SetDefault(profileName); err != nil {
 			return fmt.Errorf("failed to update token: %w", err)
-		}
-		if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-			c.Globals.ErrLog.Add(err)
-			return fmt.Errorf("error saving config file: %w", err)
 		}
 	}
 
@@ -74,13 +70,26 @@ func (c *UpdateCommand) Exec(in io.Reader, out io.Writer) error {
 	return nil
 }
 
-func (c *UpdateCommand) identifyProfile() (string, *config.AuthToken, error) {
+func (c *UpdateCommand) identifyProfile() (string, *credentials.Token, error) {
 	if c.profile == "" && c.Globals.Flags.Profile == "" {
-		name, at := c.Globals.Config.GetDefaultAuthToken()
-		if at == nil {
+		name, err := credentials.DefaultOrEmpty(c.Globals.Credentials)
+		if err != nil {
+			return "", nil, fmt.Errorf("resolving default credential: %w", err)
+		}
+		if name == "" {
 			return "", nil, fsterr.RemediationError{
 				Inner:       fmt.Errorf("no active profile"),
 				Remediation: "At least one account profile should be set as the 'default'. Run `fastly profile update <NAME>` and ensure the profile is set to be the default.",
+			}
+		}
+		at, err := credentials.Lookup(c.Globals.Credentials, name)
+		if err != nil {
+			return "", nil, fmt.Errorf("loading credential %q: %w", name, err)
+		}
+		if at == nil {
+			return "", nil, fsterr.RemediationError{
+				Inner:       fmt.Errorf("default profile %q is missing", name),
+				Remediation: fsterr.ProfileRemediation(),
 			}
 		}
 		return name, at, nil
@@ -90,7 +99,10 @@ func (c *UpdateCommand) identifyProfile() (string, *config.AuthToken, error) {
 	if c.Globals.Flags.Profile != "" {
 		profileName = c.Globals.Flags.Profile
 	}
-	at := c.Globals.Config.GetAuthToken(profileName)
+	at, err := credentials.Lookup(c.Globals.Credentials, profileName)
+	if err != nil {
+		return "", nil, fmt.Errorf("loading credential %q: %w", profileName, err)
+	}
 	if at == nil {
 		msg := fmt.Sprintf("the profile '%s' does not exist", profileName)
 		return "", nil, fsterr.RemediationError{
@@ -102,8 +114,8 @@ func (c *UpdateCommand) identifyProfile() (string, *config.AuthToken, error) {
 	return profileName, at, nil
 }
 
-func (c *UpdateCommand) updateToken(profileName string, at *config.AuthToken, in io.Reader, out io.Writer) error {
-	if c.sso || at.Type == config.AuthTokenTypeSSO {
+func (c *UpdateCommand) updateToken(profileName string, at *credentials.Token, in io.Reader, out io.Writer) error {
+	if c.sso || at.Type == credentials.TypeSSO {
 		if err := authcmd.RunSSOWithTokenName(in, out, c.Globals, false, false, profileName); err != nil {
 			return fmt.Errorf("failed to authenticate: %w", err)
 		}
@@ -140,11 +152,9 @@ func (c *UpdateCommand) updateToken(profileName string, at *config.AuthToken, in
 		return err
 	}
 
-	authcmd.BuildAndStoreStaticToken(c.Globals, token, profileName, md, false)
-
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
+	if err := authcmd.BuildAndStoreStaticToken(c.Globals, token, profileName, md, false); err != nil {
 		c.Globals.ErrLog.Add(err)
-		return fmt.Errorf("error saving config file: %w", err)
+		return fmt.Errorf("error storing token: %w", err)
 	}
 	return nil
 }

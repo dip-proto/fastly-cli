@@ -46,7 +46,7 @@ func (c *LoginCommand) Exec(in io.Reader, out io.Writer) error {
 	}
 
 	text.Success(out, "Authenticated as %s (token stored as %q)", md.Email, name)
-	text.Info(out, "Token saved to %s", c.Globals.ConfigPath)
+	text.Info(out, "Token saved to %s", c.Globals.CredentialsPath)
 	return nil
 }
 
@@ -67,9 +67,8 @@ func (c *LoginCommand) execSSO(in io.Reader, out io.Writer) error {
 		return fmt.Errorf("SSO authentication failed: %w", err)
 	}
 
-	c.Globals.Config.Auth.Default = tokenName
-	if err := c.Globals.Config.Write(c.Globals.ConfigPath); err != nil {
-		return fmt.Errorf("error saving config: %w", err)
+	if err := c.Globals.Credentials.SetDefault(tokenName); err != nil {
+		return fmt.Errorf("error setting default credential: %w", err)
 	}
 
 	text.Break(out)
